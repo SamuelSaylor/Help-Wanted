@@ -15,7 +15,7 @@ One command, no subcommands: a beginner runs it once and goes through every stag
 1. **Setup guide**: checks Ollama is installed and running, pulls the model, offers an Ollama cloud model if the machine can't run one locally, and signs the Contributor in to GitHub. Explains every fix in plain words.
 2. **Questionnaire** → Contributor Profile (a teammate owns this stage). Every question is optional; unanswered ones fall back to defaults. Mostly multiple choice, with a few free-text fields. Gemma pulls `search_keywords` out of the free-text answers.
 3. **Skill scan** → Skill Assessment. Combines the Contributor's own answers (years programming, Git experience, past contributions) with their public GitHub activity (username from the MCP `get_me` tool), and works out `experience_level`. With no GitHub history, it says "new to GitHub" and discovery favours projects with many beginner-labelled issues.
-4. **Discovery**: Gemma writes GitHub repository searches from the Profile and Assessment, then reranks the results → Candidate Projects. `project_popularity`, `contributor_count` and `recent_activity` become search filters (`stars:`, `pushed:>`). Candidate Projects = `recommendation_count × 2`, at most 6.
+4. **Discovery**: Gemma writes GitHub repository searches from the Profile and Assessment, then reranks the results → Candidate Projects. `project_popularity` and `recent_activity` become search filters (`stars:`, `pushed:>`). Contributor count is not a discovery filter; the profile field is retained for questionnaire contract compatibility. Candidate Projects = `recommendation_count × 2`, at most 6.
 5. **Issue search**: one short run per Candidate Project, run sequentially (Ollama queues requests, and semantic issue search allows 10 requests/min). Gemma writes the query; code calls `search_issues` and filters the results before Gemma sees them: open, no assignee, no linked pull request, updated in the last 6 months. Issues labelled `good first issue` or `help wanted` rank higher; with `beginner_friendly_only` they are required. Gemma then picks the best 1–3, preferring smaller issues when `time_available` is short. If too few issues pass, search up to 2 more Candidate Projects, then show fewer Recommendations and say why in plain words. Never relax the filter.
 6. **Recommendations**: for each issue, Gemma writes why it fits the Contributor, what they will learn, and first steps, in the Contributor's native language (issue titles stay as on GitHub).
 
@@ -36,7 +36,7 @@ past_contributions: str           # free text
 contribution_goal: str            # e.g. "learn", "portfolio", "give back"
 time_available: "1-2 hours" | "a weekend" | "ongoing"
 project_popularity: "small" | "medium" | "large" | "any"
-contributor_count: "<10" | "10-100" | "100+" | "any"
+contributor_count: "<10" | "10-100" | "100+" | "any"  # compatibility field; not a filter
 recent_activity: "1 month" | "6 months" | "any"
 beginner_friendly_only: bool
 recommendation_count: int         # how many Recommendations, e.g. 3
@@ -57,7 +57,8 @@ Gemma must be central to the work (judged on this), not a chat wrapper.
 
 - Ollama ignores `tool_choice`, so you can't force a tool call. Give each node only the tools it needs.
 - The MCP adapter loads every tool on the server. Filter by name: skill scan uses `get_me`, `search_repositories` and `search_pull_requests`; discovery uses `search_repositories` and `get_file_contents`; issue search uses `search_issues`. Small models get worse when they see more tools.
-- The MCP `search_issues` tool already does semantic search (`search_type=semantic`) and strips quotes from free text.
+- The MCP `search_issues` tool does semantic search internally and strips quotes from free text. Its tool arguments do not include `search_type`.
+- Use `-linked:pr` to exclude GitHub closing-reference PR links. This is the supported definition of a linked PR; arbitrary mentions are outside the search tool's guarantees.
 - Use `with_structured_output` (json_schema) for nodes that only need structured output, and keep tool calling for the nodes that search.
 - Ollama's default context window is far smaller than Gemma 4's 128K/256K and truncates silently. Set `num_ctx` on `ChatOllama` explicitly (about 8K on 8 GB machines, 16–32K on bigger ones). Keep each stage a fresh conversation that receives only the previous stage's JSON, cut READMEs to their first few thousand characters, and strip MCP results down to the fields Gemma needs.
 

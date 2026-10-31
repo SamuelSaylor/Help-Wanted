@@ -40,6 +40,7 @@ class SkillAssessment(Contract):
     summary: str
     coding_languages: list[str] = Field(default_factory=list)
     new_to_github: bool = False
+    evidence: list[str] = Field(default_factory=list)
 
 
 class CandidateProject(Contract):
