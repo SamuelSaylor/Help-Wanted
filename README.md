@@ -1,27 +1,38 @@
-<img src="logo.png" width="160" alt="Help Wanted logo">
+<p align="center">
+  <img src="logo.png" width="160" alt="Help Wanted logo">
+</p>
 
 # Help Wanted
 
-Find a first open-source issue that fits what you know, what you care about, and the time you have. Help Wanted is a Python command-line tool that uses **Gemma 4 through Ollama** to assess experience, find Candidate Projects, and explain how to get started in your native language.
+Help Wanted finds a first open-source issue that fits what you know, what you care about, and how much time you have. You run one command, answer a few optional questions, and get a short list of real GitHub issues with a plain explanation of how to start each one, written in your own language.
 
-Built for Hacktoberfest Hack Day San Antonio, October 31, 2026: MLH Best Open-Source AI Project (Gemma 4) and OSPO Open Source Education.
+Gemma 4 runs locally through Ollama and makes the decisions at every stage: it turns your answers into searches, judges your experience, ranks projects and issues, and writes the guides. Built for Hacktoberfest Hack Day San Antonio 2026, for the MLH Best Open-Source AI Project (Gemma 4) and OSPO Open Source Education tracks.
 
 > [!WARNING]
-> **Work in progress, not a verified end-to-end demo.** Automated tests use scripted Ollama and GitHub responses. A full live Gemma/GitHub run remains unverified; see [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9).
+> This is a work in progress. The automated tests use scripted Ollama and GitHub responses, and a full live run with real Gemma and GitHub is not verified yet. Progress is tracked in [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9).
 
-## Get ready
+## Why it exists
 
-You need a terminal, an internet connection, a GitHub account, and:
+Most people who have never contributed to open source can't tell which projects are friendly, which issues are still free, or which ones match their skills. A "good first issue" search gives them links but no reason to pick one and no idea what to do next. This is aimed at beginners: high schoolers, non-CS majors, first-generation students, and people whose first language isn't English.
 
-- [Git](https://git-scm.com/downloads), to copy this repository.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/), to manage Python and install the project's dependencies.
-- **Python 3.13**, installed with uv below. Use it rather than a newer system Python, which may lack compatible dependency builds.
-- [Ollama](https://ollama.com/download), installed and available as the `ollama` command. Open the Ollama app, or run `ollama serve` in another terminal and leave it running.
-- Enough memory and disk space for a local model, or an Ollama account for cloud inference. The first model download can be large and slow.
+The project is MIT licensed, and issues and pull requests are welcome. [GLOSSARY.md](GLOSSARY.md) and [AGENTS.md](AGENTS.md) explain the terms and design decisions before you read the code.
 
-## Clone and run
+## How it works
 
-These steps use the implementation's integration branch and start the CLI, including Ollama setup, GitHub sign-in, and the optional questionnaire.
+A fixed [LangGraph](https://docs.langchain.com/oss/python/langgraph/overview) pipeline runs six stages in order:
+
+1. **Setup:** checks Ollama, pulls the model, and signs you in to GitHub.
+2. **Questionnaire:** asks about your interests, languages, experience, goals and time. Every question is optional. Gemma pulls search keywords out of your free-text answers.
+3. **Skill scan:** combines your answers with your public repositories and merged pull requests. If you have no public history, you are treated as new to GitHub.
+4. **Discovery:** Gemma writes repository searches and ranks the results by reading their READMEs. It picks twice as many projects as the recommendations you asked for, up to six.
+5. **Issue search:** code filters issues first, then Gemma picks the best one to three per project. An issue must be open, unassigned, updated in the last six months, and have no linked pull request. Beginner labels rank higher, and are required if you chose beginner-friendly only. These rules are never relaxed. If too few issues pass, you get fewer recommendations and a reason.
+6. **Recommendations:** Gemma explains why each issue fits you, what you will learn, and the first steps, in your native language. Issue titles stay exactly as they appear on GitHub.
+
+Results are saved to `.help-wanted/<github-username>/` as validated JSON (`profile.json`, `skills.json`, `projects.json`, `issues.json`) plus a readable `recommendations.md`.
+
+## Run it
+
+You need [Git](https://git-scm.com/downloads), [uv](https://docs.astral.sh/uv/getting-started/installation/), [Ollama](https://ollama.com/download) (installed and running), and a GitHub account. uv installs Python 3.13 and the dependencies for you.
 
 ```bash
 git clone --branch integration/help-wanted-spec-1 https://github.com/SamuelSaylor/Hack-Day-2026.git
@@ -30,27 +41,28 @@ uv python install 3.13
 uv run --python 3.13 help-wanted
 ```
 
-Later, from the same folder:
+There are no subcommands. The setup guide downloads the model with a progress bar and walks you through GitHub sign-in. It does not install Ollama for you, but it tells you where to get it.
+
+To change your answers, or to rerun every stage:
 
 ```bash
-uv run help-wanted
+uv run help-wanted --fresh
 ```
 
-uv creates the Python environment and installs dependencies for you. There are **no subcommands** to learn. The setup guide checks Ollama, asks before starting a stopped local server, downloads the selected model with progress, and walks you through GitHub sign-in. It explains how to install Ollama if it is missing; it does not install Ollama itself.
+A rerun otherwise reuses saved stages, so a failure late in the pipeline doesn't cost you the questionnaire.
 
-### Choose a Gemma model
+### Which Gemma 4 model
 
-The model adapter defaults to **`gemma4:e4b`**. When `HELP_WANTED_MODEL` is not set, setup asks whether you want **Ollama cloud**, regardless of your computer's memory. Cloud sends model inputs to Ollama's service and requires internet access and an Ollama account. Answer yes to select `gemma4:cloud`, or no to run locally with a size chosen from detected memory:
+The default is `gemma4:e4b`. Setup asks whether you want Ollama cloud (`gemma4:cloud`, which sends model inputs to Ollama's service and needs an Ollama account). If you decline, it picks a local size from your memory:
 
-| Computer memory | Setup selection |
+| Memory | Model |
 | --- | --- |
 | 8 GB | `gemma4:e2b` |
 | 12 GB | `gemma4:e4b` |
 | 16 GB | `gemma4:12b` |
 | 32 GB or more | `gemma4:26b` |
-| Below 8 GB | Offers `gemma4:cloud` again; stops with guidance if declined |
 
-These are starting points, not performance guarantees; other apps and context size also use memory. If memory cannot be detected, setup falls back to `gemma4:e4b`. Set `HELP_WANTED_MODEL` to use a specific model and skip the cloud/local choice and memory-based selection (bash/zsh):
+Below 8 GB, setup offers the cloud model again. These sizes are starting points, not guarantees. To skip the prompts, set the model yourself:
 
 ```bash
 export HELP_WANTED_MODEL=gemma4:e2b
@@ -58,75 +70,31 @@ export HELP_WANTED_NUM_CTX=8192
 uv run help-wanted
 ```
 
-`HELP_WANTED_NUM_CTX` controls the app's input budget and the context requested from Ollama. It defaults to **8192 for local models** and **131072 for cloud models**. For local inference, start around 8192 on an 8 GB machine; 16384–32768 may suit larger machines, with additional memory use. Ollama cloud manages its model's context remotely; increasing the cloud input budget does not require more memory on your computer. Keep overrides within the selected model's supported context length. Stages use fresh conversations and short GitHub/README excerpts to keep inputs bounded. An app context-window error is an input-size check, not a report that your computer has run out of memory.
-
-For cloud inference, keep local Ollama installed and running. Setup checks your Ollama authentication only when you choose cloud. If you are already authenticated, it says “Signed in to Ollama” and continues. Otherwise, it runs `ollama signin`, which opens Ollama's account-linking page in your browser. Finish signing in there; setup waits up to 3 minutes to confirm authentication before continuing. If the browser does not open, use the link Ollama prints in the terminal. Local models do not require an Ollama account or authentication check. You can also select cloud explicitly:
-
-```bash
-export HELP_WANTED_MODEL=gemma4:cloud
-uv run help-wanted
-```
-
-Cloud inference requires internet access and sends model inputs to Ollama's service. Local inference runs on your machine, but GitHub searches still require internet access. `OLLAMA_HOST` optionally changes the Ollama address; it defaults to `http://localhost:11434`.
+`HELP_WANTED_NUM_CTX` sets the context window and defaults to 8192 for local models and 131072 for cloud. Ollama's own default is much smaller and truncates silently, so the app always sets it explicitly. `OLLAMA_HOST` changes the Ollama address from `http://localhost:11434`.
 
 ### GitHub sign-in
 
-The sign-in helper tries `GITHUB_TOKEN`, an existing GitHub CLI sign-in (`gh auth token`), a safely saved Help Wanted token, then browser device sign-in. For device sign-in, open GitHub's displayed page and enter the short code. The public OAuth client ID is in the source; **no client secret or API key is needed**.
+Setup tries these in order: the `GITHUB_TOKEN` environment variable, your GitHub CLI login, a token Help Wanted saved earlier, then browser sign-in where you type a short code into a GitHub page. If that fails, it links to a pre-filled fine-grained token page. No client secret is needed.
 
-If device sign-in fails, the helper offers a pre-filled fine-grained token page and a hidden token prompt. Keep public repositories read-only and add no permissions. Help Wanted requests **no OAuth scopes** and only reads public data; it does not modify repositories or open pull requests. Existing tokens may have broader permissions, but those are not required by the application.
+Help Wanted requests no OAuth scopes and only reads public data. It never changes repositories or opens pull requests. Tokens you type in are saved to `~/.config/help-wanted/token` with owner-only permissions. Keep that file private.
 
-Newly entered tokens are saved to `~/.config/help-wanted/token` with owner-only permissions (`600`). Tokens from the environment or GitHub CLI are not copied there. Never share that file or paste a token into an issue.
+GitHub access goes through the [hosted GitHub MCP server](https://github.com/github/github-mcp-server). If it refuses the connection, the app falls back to a local `github-mcp-server stdio` binary (`brew install github-mcp-server` on macOS).
 
-GitHub tools normally use the [hosted GitHub MCP server](https://github.com/github/github-mcp-server). If it rejects the connection, the adapter can use the local `github-mcp-server stdio` binary. On macOS with Homebrew, install that optional fallback with `brew install github-mcp-server`. Hosted access and no-scope semantic issue search still need live verification on the demo account.
-
-## What the pipeline does
-
-The target flow is a fixed LangGraph sequence, not a chatbot deciding which stage to run:
-
-1. **Setup:** prepare Ollama and sign in to GitHub.
-2. **Questionnaire:** create a Contributor Profile from optional answers about interests, coding and spoken languages, experience, goals, and time. Gemma extracts search keywords from free text. Skip any question to use its default. Runs without an interactive terminal use the supplied or default Contributor Profile.
-3. **Skill scan:** combine experience answers with public repositories and merged pull requests for a Gemma-written Skill Assessment. No public history means “new to GitHub,” not “cannot program.”
-4. **Discovery:** Gemma writes repository searches and ranks Candidate Projects using their metadata and README excerpts. Code applies popularity and recent-push filters. Discovery selects twice the requested Recommendation count, at most six, with up to two spare projects. **Contributor-count filtering is out of scope:** `contributor_count` is retained only for Contributor Profile compatibility, not filtering or ranking.
-5. **Issue search:** search projects sequentially, filter issues before Gemma sees them, and let Gemma choose the best one to three per project, considering available time.
-6. **Recommendations:** Gemma writes why each selected issue fits, what you will learn, and concrete first steps in the first language in `spoken_languages`. Code preserves GitHub's original issue titles and links.
-
-Issue search requires open issues, no assignee, an update within six months, and no closing-reference pull request link (`-linked:pr`). Arbitrary PR mentions are **not** covered by that linked-PR definition. `good first issue` and `help wanted` labels rank higher and are required when `beginner_friendly_only` is set. If too few issues pass, search up to two spare Candidate Projects, then explain the shortfall rather than relax the rules. These checks are covered by offline tests, not a completed live run.
-
-Gemma makes the matching decisions: keyword extraction, search planning, evidence-based assessment, project/issue ranking, and personalized explanations. Python owns validation, issue eligibility, bounded GitHub calls, and output formatting.
-
-## Saved work and starting over
-
-The pipeline saves work in `.help-wanted/<github-username>/` inside the folder where you run it:
-
-| File | Contents |
-| --- | --- |
-| `profile.json` | Contributor Profile: answers and preferences |
-| `skills.json` | Skill Assessment and public-history evidence |
-| `projects.json` | Ranked Candidate Projects and spares |
-| `issues.json` | Selected issues and any shortfall reason |
-| `recommendations.md` | Readable Recommendations, also shown in the terminal |
-
-The JSON files are Pydantic-validated and are the source of truth. A rerun reuses existing stage outputs, including saved Markdown, so completed work survives a later failure. A saved `profile.json` skips the questionnaire; use `--fresh` to answer it again, including when the saved Profile contains defaults. Setup and the GitHub identity check still run, so Ollama and GitHub access are needed even when outputs are cached. The CLI uses the signed-in GitHub username for the output folder.
-
-To replace saved outputs and run every stage again:
+## Tests
 
 ```bash
-uv run help-wanted --fresh
+uv run pytest
 ```
 
-Use `--fresh` after changing model settings if you want newly generated results. A damaged saved JSON file produces a message asking you to start over. Keep your results private if your answers contain personal information; separate username folders are not an access-control boundary on a shared machine.
+## Built by
 
-## Team and credits
+[@simonteague6](https://github.com/simonteague6) and [@SamuelSaylor](https://github.com/SamuelSaylor). Samuel drew the logo.
 
-Repository history credits **Simon ([@simonteague6](https://github.com/simonteague6))** and **Samuel ([@SamuelSaylor](https://github.com/SamuelSaylor))**. Samuel supplied the hand-drawn logo. The project is shared under the [MIT license](LICENSE).
+**Built on October 31, 2026:** the `help_wanted` package and CLI, including the Ollama setup guide, GitHub sign-in, questionnaire, skill scan, discovery, issue search, recommendation writing, and the offline tests.
 
-**Built on October 31, 2026:** the Help Wanted Python package and CLI with Ollama/GitHub setup wiring, optional questionnaire and keyword extraction, validated stage contracts and saved-output pipeline, GitHub sign-in helper, Ollama setup helper, public-history Skill Assessment, Gemma-driven discovery, deterministic issue filtering and Gemma issue selection, Recommendation writing, and offline tests. The live demo remains unverified.
+**Reused:**
 
-**Reused, not trained or built by this team:**
-
-- [Google Gemma 4](https://ai.google.dev/gemma), the pretrained model family making the matching decisions. No model training or fine-tuning is claimed.
-- [Ollama](https://ollama.com/), for local model serving and optional cloud inference.
-- [GitHub](https://github.com/) public repository, README, issue, and contribution data, accessed through the [GitHub MCP server](https://github.com/github/github-mcp-server). No separate project dataset is bundled; repository content remains its authors' work.
-- [LangGraph](https://docs.langchain.com/oss/python/langgraph/overview), LangChain's Ollama and MCP adapters, Pydantic, Typer, Rich, HTTPX, uv, and pytest for orchestration, adapters, validation, terminal output, packaging, and offline checks.
-
-See [AGENTS.md](AGENTS.md) for the implementation contract and [GLOSSARY.md](GLOSSARY.md) for shared project terms. A real-model demo's chosen model and results still need to be recorded on [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9).
+- [Gemma 4](https://ai.google.dev/gemma) is the pretrained model. We did no training or fine-tuning.
+- [Ollama](https://ollama.com/) serves it locally, with optional cloud inference.
+- GitHub's public repository, README and issue data, through the GitHub MCP server. No dataset is bundled.
+- LangGraph, the LangChain Ollama and MCP adapters, Pydantic, Typer, Rich, questionary, HTTPX, uv and pytest.
