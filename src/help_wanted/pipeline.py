@@ -15,6 +15,7 @@ from help_wanted.contracts import (
 from help_wanted.stages import (
     discovery, issue_search, questionnaire, recommendations, setup, skill_scan,
 )
+from help_wanted.model_context import budget_messages, OUTPUT_TOKENS
 
 
 STAGE_TOOLS = {
@@ -42,7 +43,17 @@ class StageContext:
 
     async def structured(self, schema: type[BaseModel], messages: list) -> BaseModel:
         """No stored conversation: pass only this stage's compact inputs."""
-        runnable = self.model.with_structured_output(schema, method="json_schema")
+        messages = budget_messages(self.model, schema, messages)
+        model = self.model
+        # Explicit finite generation headroom also applies to externally supplied
+        # ChatOllama models. Lightweight test models retain the existing API.
+        from langchain_ollama import ChatOllama
+        if isinstance(model, ChatOllama):
+            model = model.model_copy(update={
+                "num_ctx": model.num_ctx or 8192,
+                "num_predict": model.num_predict if model.num_predict and model.num_predict > 0 else OUTPUT_TOKENS,
+            })
+        runnable = model.with_structured_output(schema, method="json_schema")
         value = await runnable.ainvoke(messages)
         return schema.model_validate(value)
 
@@ -76,6 +87,12 @@ async def run_pipeline(
         ("issue_search", issue_search, IssueSelection, "issues.json", ("profile", "skills", "projects")),
         ("recommendations", recommendations, Recommendations, "recommendations.md", ("profile", "skills", "projects", "issues")),
     ]
+    if fresh:
+        # Remove descendants first, before any new answers can be persisted.
+        # Only these exact generated outputs belong to --fresh; keep other files.
+        for _, _, _, filename, _ in reversed(stages):
+            if filename:
+                (folder / filename).unlink(missing_ok=True)
     output_keys = dict(zip(STAGE_TOOLS, ("setup", "profile", "skills", "projects", "issues", "recommendations")))
     graph = StateGraph(_State)
 

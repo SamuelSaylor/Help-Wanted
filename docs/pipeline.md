@@ -40,6 +40,7 @@ still inject just the model and GitHub tools into `run_pipeline`. `result` is a
 `build_model(model_name=None)` returns `ChatOllama` with the setup-selected model,
 or `HELP_WANTED_MODEL` (default `gemma4:e4b`) when no name is supplied, and explicit
 `num_ctx` (`HELP_WANTED_NUM_CTX`, default 8192).
+Generation has a finite 1024-token allowance by default.
 `OLLAMA_HOST` selects the Ollama server. `load_github_tools(token)` uses hosted
 MCP, falling back to `github-mcp-server stdio` when loading hosted tools fails.
 Pass `transport="hosted"` or `transport="stdio"` to select explicitly.
@@ -72,7 +73,15 @@ Replace only the relevant module's implementation. Output models are in
 - `await context.structured(Schema, messages)`: calls
   `model.with_structured_output(Schema, method="json_schema").ainvoke(messages)`
   and validates its result. Each call receives only the supplied messages;
-  the pipeline retains no conversation history.
+  the pipeline retains no conversation history. Before invocation, an aggregate
+  guard counts UTF-8 bytes of the complete messages and schema, reserves 512
+  tokens for the chat template and the configured output allowance, and checks
+  against `num_ctx` (8192 for test models without it). This conservative
+  byte-token ceiling handles multilingual input without a tokenizer download.
+  If needed, only descriptive text/evidence/README excerpts are shortened in
+  copies; saved JSON and issue identities, URLs, labels and safety fields remain
+  intact. Irreducibly large inputs stop with guidance to shorten answers or
+  increase `HELP_WANTED_NUM_CTX`, rather than relying on silent truncation.
 - `await context.call_tool(name, arguments)`: calls the allowed tool's async
   `ainvoke`. Missing/disallowed tools raise `ValueError`.
 - `tools`: only the stage's allowed GitHub tools (see `pipeline.STAGE_TOOLS`).
@@ -81,7 +90,11 @@ Replace only the relevant module's implementation. Output models are in
 
 Stages return data, not files. The graph validates return values, atomically
 writes each output, and validates cached JSON before reuse. Invalid caches stop
-the run; `--fresh` replaces them. A missing later output is recomputed from
+the run. Before running stages, `--fresh` invalidates exactly `profile.json`,
+`skills.json`, `projects.json`, `issues.json` and `recommendations.md`, removing
+descendants first and keeping unrelated files. An interrupted fresh run can
+resume its completed stages without reusing descendants from an earlier run.
+A missing later output is recomputed from
 validated earlier outputs. With cached Recommendations, Markdown is reused as-is.
 Markdown is the human-readable final output; all earlier stage data uses JSON.
 
@@ -93,6 +106,11 @@ search filter. Issue search must keep issues open, unassigned, updated within
 six months and without a closing-reference pull request (`-linked:pr`). Arbitrary
 PR mentions are outside that guarantee. Beginner labels rank higher and are
 required with `beginner_friendly_only`; shortfalls never relax eligibility.
+All repository, pull-request and issue searches share up to four identical-query
+attempts on GitHub search-limit errors, waiting at least 60 seconds (or a larger
+Retry-After). Issue searches also observe the local ten-requests/minute window.
+Identity and stages share MCP envelope decoding; issue eligibility still checks
+the result shape and retains typed-result provenance for omitted empty fields.
 
 Skill Assessment and Recommendation writing use structured Gemma calls; discovery
 and issue-search implementations are integrated independently. Their individual

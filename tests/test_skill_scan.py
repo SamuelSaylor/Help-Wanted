@@ -87,6 +87,7 @@ class AssessmentModel:
     lambda value: [{"type": "text", "text": json.dumps(value)}],
     lambda value: {"content": [{"type": "text", "text": json.dumps(value)}]},
     lambda value: {"structuredContent": value},
+    lambda value: {"content": json.dumps(value)},
 ])
 def test_public_history_and_self_reports_produce_grounded_skill_assessment(tmp_path, envelope):
     folder = seed_other_stages(tmp_path, ContributorProfile(
@@ -141,7 +142,10 @@ def test_different_signed_in_contributor_cannot_write_this_results_folder(tmp_pa
     {"isError": True, "content": [{"type": "text", "text": "Access denied"}]},
     {"message": "API rate limit exceeded"},
 ])
-def test_unreadable_history_is_not_saved_as_new_to_github(tmp_path, response):
+def test_unreadable_history_is_not_saved_as_new_to_github(tmp_path, response, monkeypatch):
+    async def pause(seconds):
+        pass
+    monkeypatch.setattr(asyncio, "sleep", pause)
     folder = seed_other_stages(tmp_path)
     tools = [
         GithubTool("get_me", {"login": "octocat"}),
@@ -152,3 +156,31 @@ def test_unreadable_history_is_not_saved_as_new_to_github(tmp_path, response):
         asyncio.run(run_pipeline(NoModel(), tools, username="octocat", output_root=tmp_path))
 
     assert not (folder / "skills.json").exists()
+
+
+@pytest.mark.parametrize("name", ["search_repositories", "search_pull_requests"])
+def test_public_history_search_waits_for_rate_limit(tmp_path, monkeypatch, name):
+    waits = []
+
+    async def pause(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", pause)
+
+    class Limited(GithubTool):
+        async def ainvoke(self, arguments):
+            self.calls.append(arguments)
+            if len(self.calls) == 1:
+                return {"is_error": True, "content": [{"type": "text", "text": "429 Retry-After: 90"}]}
+            return {"structured_content": {"items": []}}
+
+    folder = seed_other_stages(tmp_path)
+    limited = Limited(name, None)
+    tools = [GithubTool("get_me", {"login": "octocat"})] + [
+        limited if tool_name == name else GithubTool(tool_name, {"items": []})
+        for tool_name in ("search_repositories", "search_pull_requests")
+    ]
+    asyncio.run(run_pipeline(NoModel(), tools, username="octocat", output_root=tmp_path))
+    assert waits == [90]
+    assert limited.calls[0] == limited.calls[1]
+    assert json.loads((folder / "skills.json").read_text())["new_to_github"] is True

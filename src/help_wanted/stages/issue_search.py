@@ -19,6 +19,8 @@ from rich.console import Console
 from rich.progress import track
 
 from help_wanted.contracts import IssueSelection, SelectedIssue
+from help_wanted.github import normalize, search
+from help_wanted.model_context import ModelContextError
 
 
 class SearchText(BaseModel):
@@ -100,35 +102,17 @@ def _empty_links(value):
 
 
 def _payload(response, structured=False):
-    if hasattr(response, "model_dump"):
-        response = response.model_dump(by_alias=True)
-    if isinstance(response, dict):
-        if response.get("isError") or response.get("is_error") or "error" in response:
-            raise ValueError(str(response))
-        if response.get("structuredContent") is not None:
-            return _payload(response["structuredContent"], structured=True)
-        if "content" in response:
-            return _payload(response["content"], structured)
-        if (type(response.get("total_count")) is int and response["total_count"] >= 0
-                and type(response.get("incomplete_results")) is bool
-                and isinstance(response.get("items"), list)):
-            return response, structured
-    if isinstance(response, str):
-        try:
-            decoded = json.loads(response)
-        except json.JSONDecodeError:
-            raise ValueError(response) from None
-        return _payload(decoded, structured)
-    if isinstance(response, list):
-        texts = [block["text"] for block in response
-                 if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)]
-        if len(texts) == 1:
-            return _payload(texts[0], structured)
+    result = normalize(response, structured=structured)
+    response = result.payload
+    if (isinstance(response, dict) and type(response.get("total_count")) is int
+            and response["total_count"] >= 0 and type(response.get("incomplete_results")) is bool
+            and isinstance(response.get("items"), list)):
+        return response, result.structured
     raise ValueError("GitHub returned an unknown search result format")
 
 
 async def _search(context, arguments, requests, console):
-    for attempt in range(4):
+    async def before():
         now = monotonic()
         while requests and now - requests[0] >= 60:
             requests.popleft()
@@ -139,24 +123,8 @@ async def _search(context, arguments, requests, console):
             while requests and now - requests[0] >= 60:
                 requests.popleft()
         requests.append(monotonic())
-        try:
-            return _payload(await context.call_tool("search_issues", arguments))
-        except Exception as error:
-            text = str(error).lower()
-            if attempt == 3 or not re.search(r"rate[ -]?limit|\b429\b", text):
-                raise
-            # MCP errors usually carry plain text, rather than HTTP response headers.
-            delay = 60.0
-            retry = re.search(r"retry[-_ ]after['\"\s:=]+(\d+)", text)
-            if retry:
-                delay = max(delay, float(retry[1]))
-            headers = getattr(getattr(error, "response", None), "headers", {})
-            try:
-                delay = max(delay, float(headers.get("retry-after", 0)))
-            except (ValueError, TypeError):
-                pass
-            console.print("GitHub needs a pause before searching again. Waiting…")
-            await sleep(delay)
+    result = await search(context, "search_issues", arguments, before=before, pause=sleep, console=console)
+    return _payload(result.payload, result.structured)
 
 
 async def run(context, *, profile, skills, projects):
@@ -184,6 +152,8 @@ async def run(context, *, profile, skills, projects):
                 {"role": "user", "content": json.dumps({"profile": profile.model_dump(), "skills": skills.model_dump(),
                                                            "project": project.model_dump()})},
             ])
+        except ModelContextError:
+            raise
         except Exception:
             problems.append("Gemma could not write a search for a Candidate Project. Check Ollama and use --fresh to retry.")
             continue
@@ -223,6 +193,8 @@ async def run(context, *, profile, skills, projects):
                                                                        "labels": issue.labels[:20], "body": issue.body[:800]}
                                                                       for issue in safe]})},
             ])
+        except ModelContextError:
+            raise
         except Exception:
             problems.append("Gemma could not select issues for a Candidate Project. Check Ollama and use --fresh to retry.")
             continue

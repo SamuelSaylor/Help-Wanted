@@ -79,11 +79,27 @@ def test_cli_authenticates_before_selecting_contributor_folder(external_services
     assert "secret-token" not in result.output
 
 
+def test_cli_explains_irreducible_context_budget(external_services, monkeypatch):
+    def small_model(model_name):
+        model = Model()
+        model.num_ctx = 64
+        return model
+
+    monkeypatch.setattr(cli, "build_model", small_model)
+    result = CliRunner().invoke(cli.app, [])
+    assert result.exit_code == 1
+    assert "too much information" in result.output
+    assert "HELP_WANTED_NUM_CTX" in result.output
+    assert "Traceback" not in result.output
+
+
 @pytest.mark.parametrize("payload", [
     {"login": "octocat"},
     '{"login":"octocat"}',
     {"content": [{"type": "text", "text": '{"login":"octocat"}'}]},
     {"structuredContent": {"login": "octocat"}},
+    {"structured_content": {"login": "octocat"}},
+    {"content": '{"login":"octocat"}'},
 ])
 def test_cli_accepts_mcp_identity_formats(external_services, monkeypatch, payload, tmp_path):
     class Identity:
@@ -115,6 +131,7 @@ def test_cli_accepts_mcp_identity_formats(external_services, monkeypatch, payloa
 @pytest.mark.parametrize("payload", [
     {"login": "../someone"}, {"login": ""}, {},
     {"isError": True, "content": "Authorization: Bearer secret-token"},
+    {"is_error": True, "structured_content": {"login": "octocat"}},
     [{"type": "text", "text": "Authorization: Bearer secret-token"}],
 ])
 def test_cli_stops_before_writing_when_identity_is_invalid(external_services, monkeypatch, payload, tmp_path):
