@@ -12,6 +12,7 @@ from langchain_core.tools import ToolException
 from pydantic import Field
 
 from help_wanted.contracts import CandidateProject, CandidateProjects, Contract
+from help_wanted.github import normalize, search
 
 
 class SearchPlan(Contract):
@@ -35,33 +36,10 @@ def _messages(instruction, data):
 
 
 def _payload(value):
-    """Unwrap MCP structured/text responses and adapter content-block lists."""
-    if hasattr(value, "model_dump"):
-        value = value.model_dump(by_alias=True)
-    if isinstance(value, dict):
-        if value.get("isError"):
-            raise ValueError("GitHub could not complete this discovery request. Please try again.")
-        if value.get("structuredContent") is not None:
-            return _payload(value["structuredContent"])
-        if isinstance(value.get("content"), list):
-            return _payload(value["content"])
-        return value
-    if isinstance(value, list):
-        for block in value:
-            if block.get("type") == "text":
-                try:
-                    return _payload(json.loads(block["text"]))
-                except json.JSONDecodeError:
-                    continue
-        # Some MCP servers return the downloaded file as an embedded resource.
-        for block in value:
-            resource = block.get("resource", {})
-            if "text" in resource:
-                return {"content": resource["text"], "encoding": "utf-8"}
+    payload = normalize(value).payload
+    if not isinstance(payload, dict):
         raise ValueError("GitHub returned an unreadable discovery response. Please try again.")
-    if isinstance(value, str):
-        return _payload(json.loads(value))
-    raise ValueError("GitHub returned an unreadable discovery response. Please try again.")
+    return payload
 
 
 def _readme(value):
@@ -155,8 +133,8 @@ async def run(context, *, profile, skills):
         arguments = {"query": query, "perPage": 10}
         if skills.new_to_github or skills.experience_level.lower() == "new to github":
             arguments.update(sort="help-wanted-issues", order="desc")
-        result = _payload(await context.call_tool("search_repositories", arguments))
-        if not isinstance(result.get("items"), list):
+        result = (await search(context, "search_repositories", arguments)).payload
+        if not isinstance(result, dict) or not isinstance(result.get("items"), list):
             raise ValueError("GitHub returned no readable repository list. Please try discovery again.")
         incomplete = incomplete or bool(result.get("incomplete_results"))
         search_results.append([_candidate(item, profile, cutoff) for item in result["items"][:10]])

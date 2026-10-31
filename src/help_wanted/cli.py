@@ -12,6 +12,7 @@ from help_wanted.auth import AuthError, get_github_token
 from help_wanted.clients import GitHubClientError, build_model, get_github_username, load_github_tools
 from help_wanted.ollama_setup import SetupError, prepare_ollama
 from help_wanted.pipeline import run_pipeline
+from help_wanted.model_context import ModelContextError
 
 
 app = typer.Typer(add_completion=False)
@@ -39,7 +40,7 @@ def main(fresh: bool = typer.Option(False, "--fresh", help="Run every stage agai
     console.print("Help Wanted — find an open-source contribution.")
     try:
         result = asyncio.run(_run(console, fresh=fresh))
-    except (SetupError, AuthError, GitHubClientError) as error:
+    except (SetupError, AuthError, GitHubClientError, ModelContextError) as error:
         console.print(str(error), markup=False)
         raise typer.Exit(1) from None
     except ValidationError:

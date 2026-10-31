@@ -1,13 +1,14 @@
 """Production adapters. Construction is outside the pipeline test seam."""
 
 import os
-import json
 import re
 import shutil
 from typing import Any
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
+from help_wanted.github import normalize
+from help_wanted.model_context import OUTPUT_TOKENS
 
 
 class GitHubClientError(RuntimeError):
@@ -21,7 +22,7 @@ def build_model(model_name: str | None = None, *, num_ctx: int | None = None) ->
     return ChatOllama(
         model=model_name if model_name is not None else os.getenv("HELP_WANTED_MODEL", "gemma4:e4b"), num_ctx=context,
         base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-        temperature=0,
+        temperature=0, num_predict=OUTPUT_TOKENS,
     )
 
 
@@ -31,28 +32,10 @@ async def get_github_username(tools: list[Any]) -> str:
     if tool is None:
         raise GitHubClientError("GitHub's sign-in check is unavailable. Reconnect its tools and try again.")
     try:
-        payload = await tool.ainvoke({})
-        # MCP adapters can return a dictionary, JSON text, or text content blocks.
-        for _ in range(10):
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            elif isinstance(payload, list):
-                payload = "".join(
-                    block["text"] for block in payload
-                    if isinstance(block, dict) and block.get("type") == "text"
-                )
-            elif isinstance(payload, dict):
-                if payload.get("isError"):
-                    break
-                login = payload.get("login")
-                if isinstance(login, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login):
-                    return login
-                key = next((key for key in ("structuredContent", "structured_content", "content") if key in payload), None)
-                if key is None:
-                    break
-                payload = payload[key]
-            else:
-                break
+        payload = normalize(await tool.ainvoke({})).payload
+        login = payload.get("login") if isinstance(payload, dict) else None
+        if isinstance(login, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login):
+            return login
     except Exception:
         # Never surface an HTTP/tool exception: it may contain the bearer token.
         pass

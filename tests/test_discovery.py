@@ -72,6 +72,25 @@ def ranked(*numbers):
             for n in numbers]
 
 
+def test_discovery_waits_and_retries_rate_limit_envelopes(tmp_path, monkeypatch):
+    import asyncio
+    waits = []
+
+    async def pause(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", pause)
+    responses = iter([
+        {"message": "API rate limit exceeded. Retry-After: 120"},
+        {"structured_content": {"items": []}},
+    ])
+    search = Tool("search_repositories", lambda _: next(responses))
+    discover(tmp_path, Model([], queries=["Python"]), [search],
+             skills=SkillAssessment(username="octocat", experience_level="beginner", summary="New"))
+    assert waits == [120]
+    assert search.calls[0] == search.calls[1]
+
+
 def test_discovery_persists_ranked_projects_and_two_spares(tmp_path):
     model = Model(ranked(7, 3, 5, 1, 0, 2, 6, 4))
     search = Tool("search_repositories", {"items": [repository(n) for n in range(8)]})
@@ -253,7 +272,10 @@ def test_embedded_mcp_readme_resource_is_read_and_truncated(tmp_path):
     {"message": "API rate limit exceeded"},
     {"items": "malformed"},
 ])
-def test_search_error_does_not_persist_made_up_projects(tmp_path, response):
+def test_search_error_does_not_persist_made_up_projects(tmp_path, response, monkeypatch):
+    async def pause(seconds):
+        pass
+    monkeypatch.setattr(asyncio, "sleep", pause)
     with pytest.raises(ValueError, match="GitHub"):
         discover(tmp_path, Model(ranked(1)), [
             Tool("search_repositories", response),

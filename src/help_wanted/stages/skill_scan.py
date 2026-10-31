@@ -3,29 +3,11 @@
 import json
 
 from help_wanted.contracts import SkillAssessment
+from help_wanted.github import normalize, search
 
 
 def _payload(value):
-    """Unwrap JSON text blocks returned by the MCP LangChain adapter."""
-    if isinstance(value, str):
-        try:
-            decoded = json.loads(value)
-        except json.JSONDecodeError as error:
-            raise ValueError("GitHub returned unreadable public history. Please try again.") from error
-        return _payload(decoded)
-    if isinstance(value, list):
-        blocks = [block for block in value if isinstance(block, dict) and block.get("type") == "text"]
-        if blocks:
-            return _payload("".join(block["text"] for block in blocks))
-        return value
-    if isinstance(value, dict):
-        if value.get("isError"):
-            raise ValueError("GitHub could not read your public history. Please try again.")
-        for key in ("structuredContent", "structured_content", "content"):
-            if key in value:
-                return _payload(value[key])
-        return value
-    raise ValueError("GitHub returned unreadable public history. Please try again.")
+    return normalize(value).payload
 
 
 def _items(value):
@@ -36,19 +18,26 @@ def _items(value):
     return items[:20]
 
 
+async def _history(context, name, arguments):
+    try:
+        return _items((await search(context, name, arguments)).payload)
+    except ValueError:
+        raise ValueError("GitHub could not read your public history. Please try again.") from None
+
+
 async def run(context, *, profile):
     identity = _payload(await context.call_tool("get_me", {}))
     username = identity.get("login") if isinstance(identity, dict) else None
     if not isinstance(username, str) or username.casefold() != context.username.casefold():
         raise ValueError("Your GitHub sign-in does not match this results folder. Sign in again and retry.")
-    repositories = _items(await context.call_tool("search_repositories", {
+    repositories = await _history(context, "search_repositories", {
         "query": f"user:{username} is:public", "perPage": 20,
         "sort": "updated", "order": "desc",
-    }))
-    pull_requests = _items(await context.call_tool("search_pull_requests", {
+    })
+    pull_requests = await _history(context, "search_pull_requests", {
         "query": f"author:{username} is:merged is:public", "perPage": 20,
         "sort": "updated", "order": "desc",
-    }))
+    })
     if repositories or pull_requests:
         repositories = [{
             "full_name": str(repo.get("full_name", ""))[:200],

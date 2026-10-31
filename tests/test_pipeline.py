@@ -88,6 +88,31 @@ def test_invalid_cached_output_is_not_silently_used(tmp_path):
     assert not (folder / "skills.json").exists()
 
 
+def test_interrupted_fresh_resumes_only_new_generation(tmp_path):
+    async def run():
+        await run_pipeline(ScriptedModel(), github_tools(), username="octocat", output_root=tmp_path)
+        folder = tmp_path / "octocat"
+        (folder / "notes.txt").write_text("keep me")
+
+        class Outage(GitHubTool):
+            async def ainvoke(self, arguments):
+                raise RuntimeError("offline")
+
+        with pytest.raises(RuntimeError):
+            await run_pipeline(ScriptedModel(), [Outage("get_me")],
+                               profile=ContributorProfile(past_contributions="NEW"),
+                               username="octocat", output_root=tmp_path, fresh=True)
+        assert json.loads((folder / "profile.json").read_text())["past_contributions"] == "NEW"
+        assert not (folder / "skills.json").exists()
+        assert not (folder / "recommendations.md").exists()
+        resumed = await run_pipeline(ScriptedModel(), github_tools(), username="octocat", output_root=tmp_path)
+        assert resumed.skipped_stages == ["questionnaire"]
+        assert "NEW" in json.loads((folder / "skills.json").read_text())["summary"]
+        assert (folder / "notes.txt").read_text() == "keep me"
+
+    asyncio.run(run())
+
+
 def test_contributors_have_separate_output_folders(tmp_path):
     for username, language in [("octocat", "Spanish"), ("another-contributor", "French")]:
         asyncio.run(run_pipeline(

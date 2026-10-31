@@ -195,6 +195,37 @@ def test_known_mcp_omission_of_empty_assignees_uses_constrained_query_evidence(t
     assert "no:assignee" in tool.calls[0]["query"]
 
 
+@pytest.mark.parametrize("wrapper", ["structured_content", "model"])
+def test_shared_normalization_preserves_typed_issue_provenance(tmp_path, wrapper):
+    from pydantic import BaseModel
+
+    class Result(BaseModel):
+        structured_content: dict
+        is_error: bool = False
+
+    unassigned = issue(1)
+    del unassigned["assignees"]
+    response = {"structured_content": payload(unassigned, issue(2, assignees=["taken"]))}
+    if wrapper == "model":
+        response = Result(**response)
+    output = run_search(tmp_path, Model(), Search([response]))
+    assert [item["number"] for item in output["issues"]] == [1]
+
+
+@pytest.mark.parametrize("response", [
+    {"is_error": True, "structured_content": payload(issue(1))},
+    {"error": "denied", "structured_content": payload(issue(1))},
+    {"structured_content": {"items": [issue(1)], "total_count": True, "incomplete_results": False}},
+    [{"type": "text", "text": json.dumps(payload(issue(1)))},
+     {"type": "text", "text": "permission denied"}],
+])
+def test_normalization_never_turns_errors_or_ambiguous_results_into_safety_evidence(tmp_path, response):
+    model = Model()
+    output = run_search(tmp_path, model, Search([response]))
+    assert output["issues"] == []
+    assert model.seen == []
+
+
 def test_model_cannot_override_query_and_only_gets_compact_safe_issue_fields(tmp_path):
     model = Model(query='repo:other/repo OR is:closed -no:assignee "unsafe"')
     tool = Search([payload(*(issue(n, body="x" * 10000, private_metadata="secret") for n in range(1, 101)))])
