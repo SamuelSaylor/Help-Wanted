@@ -185,7 +185,7 @@ async def run(context, *, profile, skills, projects):
                                                            "project": project.model_dump()})},
             ])
         except Exception:
-            problems.append("Gemma could not write a search for a Candidate Project. Check Ollama and try again.")
+            problems.append("Gemma could not write a search for a Candidate Project. Check Ollama and use --fresh to retry.")
             continue
         # Only words survive: Gemma cannot insert/override repository or safety qualifiers.
         topic = " ".join(word for word in re.findall(r"[^\W_]+", query.query, flags=re.UNICODE)
@@ -195,7 +195,8 @@ async def run(context, *, profile, skills, projects):
         try:
             response, structured = await _search(context, arguments, requests, console)
         except Exception:
-            problems.append("GitHub could not provide verified search results for a Candidate Project.")
+            problems.append("GitHub could not provide verified search results for a Candidate Project. "
+                            "Check your connection or sign-in, then use --fresh to retry later.")
             continue
         if response["incomplete_results"] or response["total_count"] > len(response["items"]):
             problems.append("GitHub returned only part of its search results; more eligible issues may exist.")
@@ -223,7 +224,7 @@ async def run(context, *, profile, skills, projects):
                                                                       for issue in safe]})},
             ])
         except Exception:
-            problems.append("Gemma could not select issues for a Candidate Project. Check Ollama and try again.")
+            problems.append("Gemma could not select issues for a Candidate Project. Check Ollama and use --fresh to retry.")
             continue
         indices = list(dict.fromkeys(index for index in ranking.indices if 0 <= index < len(safe)))
         indices.sort(key=lambda index: not _beginner(safe[index].labels))
