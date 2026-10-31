@@ -53,10 +53,22 @@ def _prepare_ollama(console: Console | None) -> str:
             downloaded = _ready_models(client, binary, host, console)
         except (httpx.HTTPError, ValueError):
             _stop(console, "Ollama could not list its models. Open or update Ollama, check OLLAMA_HOST, then try again.")
-        model = os.getenv("HELP_WANTED_MODEL", "").strip() or _local_model(console)
+        model = os.getenv("HELP_WANTED_MODEL", "").strip()
+        if not model:
+            console.print(
+                "You can run Gemma locally on this machine or use Ollama cloud. "
+                "Cloud sends model inputs to Ollama's service and requires "
+                "internet access and an Ollama account."
+            )
+            model = (
+                "gemma4:cloud"
+                if Confirm.ask("Would you like to use Ollama cloud?", default=False, console=console)
+                else _local_model(console)
+            )
         if "cloud" in model:
             console.print(
-                "The cloud model runs on Ollama's computers and needs internet access. "
+                "The cloud model sends model inputs to Ollama's service and requires "
+                "internet access and an Ollama account. "
                 "Sign in to Ollama by running `ollama signin` in another terminal first."
             )
         names = {item.get("name") for item in downloaded.get("models", [])}

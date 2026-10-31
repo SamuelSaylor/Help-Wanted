@@ -40,7 +40,7 @@ uv creates the Python environment and installs dependencies for you. There are *
 
 ### Choose a Gemma model
 
-The model adapter defaults to **`gemma4:e4b`**. The setup helper chooses a size from detected memory when you have not set `HELP_WANTED_MODEL`:
+The model adapter defaults to **`gemma4:e4b`**. When `HELP_WANTED_MODEL` is not set, setup asks whether you want **Ollama cloud**, regardless of your computer's memory. Cloud sends model inputs to Ollama's service and requires internet access and an Ollama account. Answer yes to select `gemma4:cloud`, or no to run locally with a size chosen from detected memory:
 
 | Computer memory | Setup selection |
 | --- | --- |
@@ -48,9 +48,9 @@ The model adapter defaults to **`gemma4:e4b`**. The setup helper chooses a size 
 | 12 GB | `gemma4:e4b` |
 | 16 GB | `gemma4:12b` |
 | 32 GB or more | `gemma4:26b` |
-| Below 8 GB | Offers `gemma4:cloud` |
+| Below 8 GB | Offers `gemma4:cloud` again; stops with guidance if declined |
 
-These are starting points, not performance guarantees; other apps and context size also use memory. If memory cannot be detected, setup falls back to `gemma4:e4b`. You can choose explicitly (bash/zsh):
+These are starting points, not performance guarantees; other apps and context size also use memory. If memory cannot be detected, setup falls back to `gemma4:e4b`. Set `HELP_WANTED_MODEL` to use a specific model and skip the cloud/local choice and memory-based selection (bash/zsh):
 
 ```bash
 export HELP_WANTED_MODEL=gemma4:e2b
@@ -60,7 +60,7 @@ uv run help-wanted
 
 `HELP_WANTED_NUM_CTX` controls how much text the model can consider at once. The adapter explicitly sets it to **8192** by default because Ollama's default can silently truncate inputs. Start around 8192 on an 8 GB machine; 16384–32768 may suit larger machines, with additional memory use. Stages use fresh conversations and short GitHub/README excerpts to keep inputs bounded.
 
-For cloud inference, keep local Ollama installed and running, then:
+For cloud inference, keep local Ollama installed and running. Setup explains how to sign in; it does not sign you in automatically. You can also select cloud explicitly:
 
 ```bash
 ollama signin
