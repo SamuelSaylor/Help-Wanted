@@ -1,2 +1,4 @@
 def main() -> None:
-    print("Hello from help-wanted!")
+    from help_wanted.cli import app
+
+    app()
