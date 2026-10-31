@@ -95,7 +95,8 @@ def _queries(plan, profile, skills):
         month += 1
         cutoff = date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
         filters.append(f"pushed:>={cutoff.isoformat()}")
-    beginner = skills.new_to_github or skills.experience_level.lower() == "new to github"
+    beginner = (profile.beginner_friendly_only or skills.new_to_github
+                or skills.experience_level.lower() == "new to github")
     variants = ["good-first-issues:>0", "help-wanted-issues:>0"] if beginner else [""]
     queries = []
     for raw in plan.queries:
@@ -131,7 +132,8 @@ async def run(context, *, profile, skills):
         match = re.search(r"pushed:>=(\d{4}-\d{2}-\d{2})", query)
         cutoff = date.fromisoformat(match[1]) if match else None
         arguments = {"query": query, "perPage": 10}
-        if skills.new_to_github or skills.experience_level.lower() == "new to github":
+        if (profile.beginner_friendly_only or skills.new_to_github
+                or skills.experience_level.lower() == "new to github"):
             arguments.update(sort="help-wanted-issues", order="desc")
         result = (await search(context, "search_repositories", arguments)).payload
         if not isinstance(result, dict) or not isinstance(result.get("items"), list):
