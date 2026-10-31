@@ -1,37 +1,54 @@
 # Pipeline integration
 
-Run `uv run help-wanted` for the walking skeleton and `uv run pytest` for tests.
-The command uses a sample Contributor Profile, writes to
-`.help-wanted/sample-contributor/`, and explicitly reports placeholder results.
-It performs no sign-in, model download, or GitHub search. `--fresh` reruns every
-stage. Real setup and stage implementations are separate tickets.
+Run `uv run help-wanted` for the single-command pipeline and `uv run pytest` for
+tests, using Python 3.13. The CLI prepares Ollama (including offering a model
+download or cloud model), signs the Contributor in to GitHub, loads GitHub MCP
+tools, and calls authenticated `get_me`. It validates that login before creating
+`.help-wanted/<login>/`. No questionnaire answer selects an identity or folder.
+
+**The questionnaire is not integrated yet.** The CLI visibly warns that a new run
+uses a default Contributor Profile, not collected answers. An existing validated
+`profile.json` is reused on resume. `--fresh` reruns every stage, currently using
+the default Profile. Questionnaire implementation belongs to its teammate.
 
 ## Entry point and dependencies
 
 ```python
 from help_wanted.clients import build_model, load_github_tools
+from help_wanted.clients import get_github_username
+from help_wanted.auth import get_github_token
+from help_wanted.ollama_setup import prepare_ollama
 from help_wanted.pipeline import run_pipeline
 
-model = build_model()
+model_name = await prepare_ollama(console=console)
+token = await get_github_token(console=console)
 tools = await load_github_tools(token)
+github_login = await get_github_username(tools)
+model = build_model(model_name)
 result = await run_pipeline(
-    model, tools, profile=profile, username=github_login,
-    output_root=output_root, fresh=False,
+    model, tools, username=github_login, fresh=False,
 )
 ```
 
-Obtain `github_login` from the authenticated `get_me` result, not a questionnaire
-answer. The setup integration owns token acquisition and selecting the login
-before choosing the output folder. The skeleton's setup node is a placeholder.
-The pipeline never constructs either outside dependency. `result` is a
+The CLI owns setup and sign-in. `get_github_username` accepts MCP JSON dictionaries,
+JSON text, text blocks and content wrappers, and rejects missing/unsafe logins.
+The graph's setup node reports readiness from the supplied identity, model and
+tools; it performs no network calls or independent authentication. Tests can
+still inject just the model and GitHub tools into `run_pipeline`. `result` is a
 `PipelineResult`, containing output location, completed/skipped stages and Markdown.
 
-`build_model()` returns `ChatOllama` with `HELP_WANTED_MODEL` (default
-`gemma4:e4b`) and explicit `num_ctx` (`HELP_WANTED_NUM_CTX`, default 8192).
+`build_model(model_name=None)` returns `ChatOllama` with the setup-selected model,
+or `HELP_WANTED_MODEL` (default `gemma4:e4b`) when no name is supplied, and explicit
+`num_ctx` (`HELP_WANTED_NUM_CTX`, default 8192).
 `OLLAMA_HOST` selects the Ollama server. `load_github_tools(token)` uses hosted
 MCP, falling back to `github-mcp-server stdio` when loading hosted tools fails.
 Pass `transport="hosted"` or `transport="stdio"` to select explicitly.
 The adapter does not acquire or save credentials.
+
+Expected setup/sign-in failures show safe, plain-word guidance. Unexpected
+network, model and tool failures show a retry message without raw exceptions,
+HTTP headers or tokens. Keyboard cancellation remains cancellation. Completed
+stage files remain available for a later run.
 
 ## Independent stage modules
 
@@ -59,7 +76,7 @@ Replace only the relevant module's implementation. Output models are in
 - `await context.call_tool(name, arguments)`: calls the allowed tool's async
   `ainvoke`. Missing/disallowed tools raise `ValueError`.
 - `tools`: only the stage's allowed GitHub tools (see `pipeline.STAGE_TOOLS`).
-- `username`, `output_directory`, and `profile` (the initial sample/seed Profile;
+- `username`, `output_directory`, and `profile` (the initial default/seed Profile;
   later stages must use their `profile` keyword input, which can come from cache).
 
 Stages return data, not files. The graph validates return values, atomically
@@ -68,7 +85,18 @@ the run; `--fresh` replaces them. A missing later output is recomputed from
 validated earlier outputs. With cached Recommendations, Markdown is reused as-is.
 Markdown is the human-readable final output; all earlier stage data uses JSON.
 
-The stage modules contain honest empty placeholders. They make no claims about
-Contributor experience, project suitability, issue eligibility, or actual Gemma
-decisions. Issue filtering, ranking, recovery, and native-language writing belong
-to their respective stage implementations.
+## Search rules and remaining verification
+
+Discovery uses `stars:` and `pushed:>` for popularity and recent activity.
+`contributor_count` remains a Contributor Profile compatibility field, not a
+search filter. Issue search must keep issues open, unassigned, updated within
+six months and without a closing-reference pull request (`-linked:pr`). Arbitrary
+PR mentions are outside that guarantee. Beginner labels rank higher and are
+required with `beginner_friendly_only`; shortfalls never relax eligibility.
+
+Skill Assessment and Recommendation writing use structured Gemma calls; discovery
+and issue-search implementations are integrated independently. Their individual
+tests and the CLI's scripted external boundaries do not establish live model
+quality or hosted MCP availability. A live Gemma 4 / GitHub end-to-end run remains
+a manual verification blocker, alongside questionnaire integration. CLI tests
+perform no downloads, sign-in interactions or live network calls.
