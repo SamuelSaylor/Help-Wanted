@@ -12,6 +12,8 @@ class Model:
 
         class Reply:
             async def ainvoke(self, messages):
+                if schema.__name__ == "Keywords":
+                    return schema.model_validate({"search_keywords": ["audio"]})
                 if schema.__name__ == "SearchPlan":
                     return schema.model_validate({"queries": ["topic:education"]})
                 return schema.model_validate({
@@ -72,24 +74,38 @@ def test_cli_authenticates_before_selecting_contributor_folder(external_services
     result = CliRunner().invoke(cli.app, [])
     assert result.exit_code == 0, result.output
     assert external_services[:4] == ["ollama", "auth", "tools", "get_me"]
-    assert "default Contributor Profile" in result.output
-    assert "questionnaire" in result.output.lower()
+    assert "not integrated" not in result.output
     assert (tmp_path / ".help-wanted/octocat/recommendations.md").exists()
     assert not (tmp_path / ".help-wanted/sample-contributor").exists()
     assert "secret-token" not in result.output
 
 
-def test_cli_explains_irreducible_context_budget(external_services, monkeypatch):
-    def small_model(model_name):
+@pytest.mark.parametrize("model_name", ["gemma4:cloud", "gemma4:e4b"])
+def test_cli_explains_irreducible_context_budget(external_services, monkeypatch, model_name):
+    async def prepare(*, console):
+        external_services.append("ollama")
+        return model_name
+
+    def small_model(selected_model):
+        assert selected_model == model_name
         model = Model()
+        model.model = model_name
         model.num_ctx = 64
         return model
 
+    monkeypatch.setattr(cli, "prepare_ollama", prepare)
     monkeypatch.setattr(cli, "build_model", small_model)
     result = CliRunner().invoke(cli.app, [])
+    output = " ".join(result.output.split())
     assert result.exit_code == 1
-    assert "too much information" in result.output
-    assert "HELP_WANTED_NUM_CTX" in result.output
+    assert "too much information" in output
+    assert "HELP_WANTED_NUM_CTX" in output
+    if model_name == "gemma4:cloud":
+        assert "cloud" in output.lower()
+        assert "not a local memory error" in output
+        assert "machine with enough memory" not in output
+    else:
+        assert "machine with enough memory" in output
     assert "Traceback" not in result.output
 
 
@@ -152,7 +168,7 @@ def test_cli_stops_before_writing_when_identity_is_invalid(external_services, mo
     assert not (tmp_path / ".help-wanted").exists()
 
 
-def test_cli_resumes_saved_contributor_profile_and_fresh_uses_defaults(external_services, tmp_path):
+def test_cli_resumes_saved_contributor_profile_and_fresh_replaces_it(external_services, tmp_path):
     first = CliRunner().invoke(cli.app, [])
     assert first.exit_code == 0, first.output
     folder = tmp_path / ".help-wanted/octocat"
@@ -166,7 +182,7 @@ def test_cli_resumes_saved_contributor_profile_and_fresh_uses_defaults(external_
     assert json.loads(profile_path.read_text())["spoken_languages"] == ["Spanish"]
     fresh = CliRunner().invoke(cli.app, ["--fresh"])
     assert fresh.exit_code == 0, fresh.output
-    assert "default Contributor Profile" in fresh.output
+    assert "Reusing your saved Contributor Profile" not in fresh.output
     assert json.loads(profile_path.read_text())["spoken_languages"] == ["English"]
 
 
@@ -240,3 +256,113 @@ def test_cli_handles_model_errors_without_headers_or_tracebacks(external_service
     assert "Gemma" in result.output
     assert "secret-token" not in result.output
     assert "Traceback" not in result.output
+
+
+def test_cli_does_not_claim_merged_questionnaire_is_missing(external_services):
+    result = CliRunner().invoke(cli.app, [])
+    assert result.exit_code == 0, result.output
+    assert "not integrated" not in result.output
+    assert "interests and experience have not been collected" not in result.output
+
+
+def test_cloud_skill_scan_fits_normal_public_history(external_services, monkeypatch, tmp_path):
+    from langchain_ollama import ChatOllama
+    from help_wanted import clients
+    from help_wanted.contracts import ContributorProfile, SkillAssessment
+
+    monkeypatch.delenv("HELP_WANTED_NUM_CTX", raising=False)
+    folder = tmp_path / ".help-wanted/octocat"
+    folder.mkdir(parents=True)
+    (folder / "profile.json").write_text(ContributorProfile().model_dump_json())
+    (folder / "projects.json").write_text('{"projects": []}')
+    (folder / "issues.json").write_text('{"issues": []}')
+    (folder / "recommendations.md").write_text("# Saved Recommendations")
+
+    class History:
+        def __init__(self, name):
+            self.name = name
+
+        async def ainvoke(self, arguments):
+            if self.name == "get_me":
+                return {"login": "octocat"}
+            if self.name == "search_repositories":
+                return {"items": [{
+                    "full_name": f"octocat/community-project-{n}", "language": "Python",
+                    "description": "An educational community project.",
+                    "html_url": f"https://github.com/octocat/community-project-{n}",
+                } for n in range(20)]}
+            return {"items": [{
+                "number": n, "title": f"Improve getting-started documentation for contributors {n}",
+                "html_url": f"https://github.com/community/educational-project/pull/{n}",
+            } for n in range(20)]}
+
+    async def tools(token):
+        return [History(name) for name in ("get_me", "search_repositories", "search_pull_requests")]
+
+    calls = []
+
+    def structured(model, schema, *, method):
+        assert model.model == "gemma4:cloud"
+        assert model.num_ctx == 131072
+        assert schema is SkillAssessment
+
+        class Reply:
+            async def ainvoke(self, messages):
+                calls.append(messages)
+                return {"username": "octocat", "experience_level": "intermediate", "summary": "Public contributions"}
+
+        return Reply()
+
+    monkeypatch.setattr(cli, "load_github_tools", tools)
+    monkeypatch.setattr(cli, "build_model", clients.build_model)
+    monkeypatch.setattr(ChatOllama, "with_structured_output", structured)
+    result = CliRunner().invoke(cli.app, [])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert (folder / "skills.json").exists()
+
+
+def test_cli_asks_questionnaire_resumes_answers_and_fresh_asks_again(external_services, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from help_wanted.stages import questionnaire
+
+    prompts = []
+
+    class Prompter:
+        async def select(self, message, choices):
+            prompts.append(message)
+            return "Spanish" if message.startswith("What is your native language?") else None
+
+        async def checkbox(self, message, choices):
+            prompts.append(message)
+            return []
+
+        async def text(self, message):
+            prompts.append(message)
+            return "music" if message.startswith("What topics or hobbies") else ""
+
+    monkeypatch.setattr(questionnaire, "sys", SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: True)))
+    monkeypatch.setattr(questionnaire, "QuestionaryPrompter", Prompter)
+    first = CliRunner().invoke(cli.app, [])
+    assert first.exit_code == 0, first.output
+    assert "Every question is optional" in first.output
+    assert "not integrated" not in first.output
+    profile_path = tmp_path / ".help-wanted/octocat/profile.json"
+    profile = json.loads(profile_path.read_text())
+    assert profile["spoken_languages"] == ["Spanish"]
+    assert profile["search_keywords"] == ["audio"]
+    assert profile["interests"] == ["music"]
+    prompt_count = len(prompts)
+    assert prompt_count > 0
+
+    resumed = CliRunner().invoke(cli.app, [])
+    assert resumed.exit_code == 0, resumed.output
+    assert len(prompts) == prompt_count
+    assert "Reusing your saved Contributor Profile" in resumed.output
+    assert "--fresh" in resumed.output
+    assert json.loads(profile_path.read_text()) == profile
+
+    fresh = CliRunner().invoke(cli.app, ["--fresh"])
+    assert fresh.exit_code == 0, fresh.output
+    assert len(prompts) == 2 * prompt_count
+    assert "Reusing your saved Contributor Profile" not in fresh.output

@@ -7,7 +7,7 @@ Find a first open-source issue that fits what you know, what you care about, and
 Built for Hacktoberfest Hack Day San Antonio, October 31, 2026: MLH Best Open-Source AI Project (Gemma 4) and OSPO Open Source Education.
 
 > [!WARNING]
-> **Work in progress, not a verified end-to-end demo.** The questionnaire is teammate-owned work in [#6](https://github.com/SamuelSaylor/Hack-Day-2026/issues/6); its current placeholder supplies a default Contributor Profile rather than asking questions. The full live Gemma run has **not been verified because Ollama is absent from the preparation environment**. [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9) remains blocked; this guide does not establish fresh-clone, demo, or production readiness.
+> **Work in progress, not a verified end-to-end demo.** Automated tests use scripted Ollama and GitHub responses. A full live Gemma/GitHub run remains unverified; see [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9).
 
 ## Get ready
 
@@ -21,7 +21,7 @@ You need a terminal, an internet connection, a GitHub account, and:
 
 ## Clone and run
 
-These steps use the implementation's integration branch and start the CLI, including Ollama setup and GitHub sign-in. Until the questionnaire is integrated, a run uses default answers; it should not be treated as a completed Recommendation demo.
+These steps use the implementation's integration branch and start the CLI, including Ollama setup, GitHub sign-in, and the optional questionnaire.
 
 ```bash
 git clone --branch integration/help-wanted-spec-1 https://github.com/SamuelSaylor/Hack-Day-2026.git
@@ -58,7 +58,7 @@ export HELP_WANTED_NUM_CTX=8192
 uv run help-wanted
 ```
 
-`HELP_WANTED_NUM_CTX` controls how much text the model can consider at once. The adapter explicitly sets it to **8192** by default because Ollama's default can silently truncate inputs. Start around 8192 on an 8 GB machine; 16384–32768 may suit larger machines, with additional memory use. Stages use fresh conversations and short GitHub/README excerpts to keep inputs bounded.
+`HELP_WANTED_NUM_CTX` controls the app's input budget and the context requested from Ollama. It defaults to **8192 for local models** and **131072 for cloud models**. For local inference, start around 8192 on an 8 GB machine; 16384–32768 may suit larger machines, with additional memory use. Ollama cloud manages its model's context remotely; increasing the cloud input budget does not require more memory on your computer. Keep overrides within the selected model's supported context length. Stages use fresh conversations and short GitHub/README excerpts to keep inputs bounded. An app context-window error is an input-size check, not a report that your computer has run out of memory.
 
 For cloud inference, keep local Ollama installed and running. Setup checks your Ollama authentication only when you choose cloud. If you are already authenticated, it says “Signed in to Ollama” and continues. Otherwise, it runs `ollama signin`, which opens Ollama's account-linking page in your browser. Finish signing in there; setup waits up to 3 minutes to confirm authentication before continuing. If the browser does not open, use the link Ollama prints in the terminal. Local models do not require an Ollama account or authentication check. You can also select cloud explicitly:
 
@@ -84,7 +84,7 @@ GitHub tools normally use the [hosted GitHub MCP server](https://github.com/gith
 The target flow is a fixed LangGraph sequence, not a chatbot deciding which stage to run:
 
 1. **Setup:** prepare Ollama and sign in to GitHub.
-2. **Questionnaire:** create a Contributor Profile from optional answers about interests, coding and spoken languages, experience, goals, and time. Gemma extracts search keywords from free text. **This stage currently returns defaults; #6 owns the interactive questionnaire.**
+2. **Questionnaire:** create a Contributor Profile from optional answers about interests, coding and spoken languages, experience, goals, and time. Gemma extracts search keywords from free text. Skip any question to use its default. Runs without an interactive terminal use the supplied or default Contributor Profile.
 3. **Skill scan:** combine experience answers with public repositories and merged pull requests for a Gemma-written Skill Assessment. No public history means “new to GitHub,” not “cannot program.”
 4. **Discovery:** Gemma writes repository searches and ranks Candidate Projects using their metadata and README excerpts. Code applies popularity and recent-push filters. Discovery selects twice the requested Recommendation count, at most six, with up to two spare projects. **Contributor-count filtering is out of scope:** `contributor_count` is retained only for Contributor Profile compatibility, not filtering or ranking.
 5. **Issue search:** search projects sequentially, filter issues before Gemma sees them, and let Gemma choose the best one to three per project, considering available time.
@@ -92,7 +92,7 @@ The target flow is a fixed LangGraph sequence, not a chatbot deciding which stag
 
 Issue search requires open issues, no assignee, an update within six months, and no closing-reference pull request link (`-linked:pr`). Arbitrary PR mentions are **not** covered by that linked-PR definition. `good first issue` and `help wanted` labels rank higher and are required when `beginner_friendly_only` is set. If too few issues pass, search up to two spare Candidate Projects, then explain the shortfall rather than relax the rules. These checks are covered by offline tests, not a completed live run.
 
-Gemma makes the matching decisions: search planning, evidence-based assessment, project/issue ranking, and personalized explanations. Python owns validation, issue eligibility, bounded GitHub calls, and output formatting. The questionnaire's keyword extraction awaits #6; assessment, discovery, issue selection, and Recommendation writing call the model adapter.
+Gemma makes the matching decisions: keyword extraction, search planning, evidence-based assessment, project/issue ranking, and personalized explanations. Python owns validation, issue eligibility, bounded GitHub calls, and output formatting.
 
 ## Saved work and starting over
 
@@ -106,7 +106,7 @@ The pipeline saves work in `.help-wanted/<github-username>/` inside the folder w
 | `issues.json` | Selected issues and any shortfall reason |
 | `recommendations.md` | Readable Recommendations, also shown in the terminal |
 
-The JSON files are Pydantic-validated and are the source of truth. A rerun reuses existing stage outputs, including saved Markdown, so completed work survives a later failure. Setup and the GitHub identity check still run, so Ollama and GitHub access are needed even when outputs are cached. The CLI uses the signed-in GitHub username for the output folder.
+The JSON files are Pydantic-validated and are the source of truth. A rerun reuses existing stage outputs, including saved Markdown, so completed work survives a later failure. A saved `profile.json` skips the questionnaire; use `--fresh` to answer it again, including when the saved Profile contains defaults. Setup and the GitHub identity check still run, so Ollama and GitHub access are needed even when outputs are cached. The CLI uses the signed-in GitHub username for the output folder.
 
 To replace saved outputs and run every stage again:
 
@@ -120,7 +120,7 @@ Use `--fresh` after changing model settings if you want newly generated results.
 
 Repository history credits **Simon ([@simonteague6](https://github.com/simonteague6))** and **Samuel ([@SamuelSaylor](https://github.com/SamuelSaylor))**. Samuel supplied the hand-drawn logo. The project is shared under the [MIT license](LICENSE).
 
-**Built on October 31, 2026:** the Help Wanted Python package and CLI with Ollama/GitHub setup wiring, validated stage contracts and saved-output pipeline, GitHub sign-in helper, Ollama setup helper, public-history Skill Assessment, Gemma-driven discovery, deterministic issue filtering and Gemma issue selection, Recommendation writing, and offline tests. The questionnaire is teammate-owned integration work in progress; the live demo remains unverified.
+**Built on October 31, 2026:** the Help Wanted Python package and CLI with Ollama/GitHub setup wiring, optional questionnaire and keyword extraction, validated stage contracts and saved-output pipeline, GitHub sign-in helper, Ollama setup helper, public-history Skill Assessment, Gemma-driven discovery, deterministic issue filtering and Gemma issue selection, Recommendation writing, and offline tests. The live demo remains unverified.
 
 **Reused, not trained or built by this team:**
 

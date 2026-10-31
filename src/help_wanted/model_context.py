@@ -11,6 +11,10 @@ import json
 
 OUTPUT_TOKENS = 1024
 TEMPLATE_TOKENS = 512
+LOCAL_CONTEXT_TOKENS = 8192
+# Gemma cloud models support at least 128K. This is a conservative app budget;
+# Ollama cloud uses the model's maximum context, independent of local RAM.
+CLOUD_CONTEXT_TOKENS = 131072
 DESCRIPTIVE = frozenset({
     "past_contributions", "interests", "industries", "search_keywords", "project_types",
     "contribution_goal", "summary", "evidence", "description", "readme", "body", "reason",
@@ -20,6 +24,15 @@ DESCRIPTIVE = frozenset({
 
 class ModelContextError(ValueError):
     """The non-descriptive inputs cannot safely fit the configured window."""
+
+
+def is_cloud_model(model_name: str) -> bool:
+    tag = model_name.rpartition(":")[2]
+    return tag == "cloud" or tag.endswith("-cloud")
+
+
+def default_context_window(model_name: str) -> int:
+    return CLOUD_CONTEXT_TOKENS if is_cloud_model(model_name) else LOCAL_CONTEXT_TOKENS
 
 
 def _project(value, limit, descriptive=False):
@@ -39,7 +52,8 @@ def budget_messages(model, schema, messages):
     Instructions, titles, labels, URLs, names, numbers and policy fields cannot
     be shortened. If those alone cannot fit, stop before invoking the model.
     """
-    context = getattr(model, "num_ctx", None) or 8192
+    model_name = getattr(model, "model", "")
+    context = getattr(model, "num_ctx", None) or default_context_window(model_name)
     output = getattr(model, "num_predict", None)
     output = output if isinstance(output, int) and output > 0 else OUTPUT_TOKENS
     schema_size = len(json.dumps(schema.model_json_schema(), ensure_ascii=False).encode("utf-8"))
@@ -72,7 +86,12 @@ def budget_messages(model, schema, messages):
             )
         if fits(candidate):
             return candidate
-    raise ModelContextError(
-        "There is too much information for this model's context window. "
+    guidance = (
+        "This is an input-size check, not a local memory error. Ollama cloud runs the model remotely. "
+        "Shorten the inputs or increase HELP_WANTED_NUM_CTX within the cloud model's supported limit, then retry."
+        if is_cloud_model(model_name) else
         "Shorten your answers or increase HELP_WANTED_NUM_CTX on a machine with enough memory, then retry."
+    )
+    raise ModelContextError(
+        "There is too much information for this model's configured context window. " + guidance
     )

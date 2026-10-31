@@ -8,7 +8,7 @@ from typing import Any
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
 from help_wanted.github import normalize
-from help_wanted.model_context import OUTPUT_TOKENS
+from help_wanted.model_context import OUTPUT_TOKENS, default_context_window
 
 
 class GitHubClientError(RuntimeError):
@@ -16,11 +16,14 @@ class GitHubClientError(RuntimeError):
 
 
 def build_model(model_name: str | None = None, *, num_ctx: int | None = None) -> ChatOllama:
-    context = num_ctx if num_ctx is not None else int(os.getenv("HELP_WANTED_NUM_CTX", "8192"))
+    model_name = model_name if model_name is not None else os.getenv("HELP_WANTED_MODEL", "gemma4:e4b")
+    context = num_ctx if num_ctx is not None else int(
+        os.getenv("HELP_WANTED_NUM_CTX", str(default_context_window(model_name)))
+    )
     if context < 1:
         raise ValueError("The model context window must be a positive number.")
     return ChatOllama(
-        model=model_name if model_name is not None else os.getenv("HELP_WANTED_MODEL", "gemma4:e4b"), num_ctx=context,
+        model=model_name, num_ctx=context,
         base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
         temperature=0, num_predict=OUTPUT_TOKENS,
     )

@@ -24,13 +24,8 @@ async def _run(console: Console, *, fresh: bool):
     tools = await load_github_tools(token)
     username = await get_github_username(tools)
     console.print(f"Signed in to GitHub as {username}.")
-    if fresh or not (Path(".help-wanted") / username / "profile.json").exists():
-        console.print(
-            "The questionnaire is not integrated yet. Using a default Contributor Profile; "
-            "your interests and experience have not been collected."
-        )
-    else:
-        console.print("Reusing your saved Contributor Profile. The questionnaire is not integrated yet.")
+    if not fresh and (Path(".help-wanted") / username / "profile.json").exists():
+        console.print("Reusing your saved Contributor Profile. Use --fresh to answer the questionnaire again.")
     return await run_pipeline(build_model(model_name), tools, username=username, fresh=fresh)
 
 

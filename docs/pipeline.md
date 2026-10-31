@@ -6,10 +6,11 @@ download or cloud model), signs the Contributor in to GitHub, loads GitHub MCP
 tools, and calls authenticated `get_me`. It validates that login before creating
 `.help-wanted/<login>/`. No questionnaire answer selects an identity or folder.
 
-**The questionnaire is not integrated yet.** The CLI visibly warns that a new run
-uses a default Contributor Profile, not collected answers. An existing validated
-`profile.json` is reused on resume. `--fresh` reruns every stage, currently using
-the default Profile. Questionnaire implementation belongs to its teammate.
+The questionnaire asks optional questions in an interactive terminal, using
+defaults for skipped answers, and Gemma extracts search keywords from free text.
+Without an interactive terminal it uses the supplied or default Contributor
+Profile. An existing validated `profile.json` is reused on resume and skips the
+questions. `--fresh` reruns every stage and asks the questionnaire again.
 
 ## Entry point and dependencies
 
@@ -39,7 +40,10 @@ still inject just the model and GitHub tools into `run_pipeline`. `result` is a
 
 `build_model(model_name=None)` returns `ChatOllama` with the setup-selected model,
 or `HELP_WANTED_MODEL` (default `gemma4:e4b`) when no name is supplied, and explicit
-`num_ctx` (`HELP_WANTED_NUM_CTX`, default 8192).
+`num_ctx` (`HELP_WANTED_NUM_CTX`, default 8192 locally or 131072 for cloud tags).
+Ollama cloud manages the model's context remotely; the cloud default is a
+conservative app input budget and does not depend on local memory. Explicit
+overrides apply to either mode and must fit the selected model's supported limit.
 Generation has a finite 1024-token allowance by default.
 `OLLAMA_HOST` selects the Ollama server. `load_github_tools(token)` uses hosted
 MCP, falling back to `github-mcp-server stdio` when loading hosted tools fails.
@@ -76,12 +80,13 @@ Replace only the relevant module's implementation. Output models are in
   the pipeline retains no conversation history. Before invocation, an aggregate
   guard counts UTF-8 bytes of the complete messages and schema, reserves 512
   tokens for the chat template and the configured output allowance, and checks
-  against `num_ctx` (8192 for test models without it). This conservative
+   against `num_ctx` (defaulting to 131072 for cloud tags, otherwise 8192). This conservative
   byte-token ceiling handles multilingual input without a tokenizer download.
   If needed, only descriptive text/evidence/README excerpts are shortened in
   copies; saved JSON and issue identities, URLs, labels and safety fields remain
   intact. Irreducibly large inputs stop with guidance to shorten answers or
-  increase `HELP_WANTED_NUM_CTX`, rather than relying on silent truncation.
+   increase `HELP_WANTED_NUM_CTX`, rather than relying on silent truncation.
+   Cloud guidance explains that this check is not a local-memory error.
 - `await context.call_tool(name, arguments)`: calls the allowed tool's async
   `ainvoke`. Missing/disallowed tools raise `ValueError`.
 - `tools`: only the stage's allowed GitHub tools (see `pipeline.STAGE_TOOLS`).
@@ -116,5 +121,5 @@ Skill Assessment and Recommendation writing use structured Gemma calls; discover
 and issue-search implementations are integrated independently. Their individual
 tests and the CLI's scripted external boundaries do not establish live model
 quality or hosted MCP availability. A live Gemma 4 / GitHub end-to-end run remains
-a manual verification blocker, alongside questionnaire integration. CLI tests
+a manual verification blocker. CLI tests
 perform no downloads, sign-in interactions or live network calls.

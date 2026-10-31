@@ -15,7 +15,7 @@ from help_wanted.contracts import (
 from help_wanted.stages import (
     discovery, issue_search, questionnaire, recommendations, setup, skill_scan,
 )
-from help_wanted.model_context import budget_messages, OUTPUT_TOKENS
+from help_wanted.model_context import budget_messages, default_context_window, OUTPUT_TOKENS
 
 
 STAGE_TOOLS = {
@@ -50,7 +50,7 @@ class StageContext:
         from langchain_ollama import ChatOllama
         if isinstance(model, ChatOllama):
             model = model.model_copy(update={
-                "num_ctx": model.num_ctx or 8192,
+                "num_ctx": model.num_ctx or default_context_window(model.model),
                 "num_predict": model.num_predict if model.num_predict and model.num_predict > 0 else OUTPUT_TOKENS,
             })
         runnable = model.with_structured_output(schema, method="json_schema")
