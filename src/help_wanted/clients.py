@@ -1,6 +1,8 @@
 """Production adapters. Construction is outside the pipeline test seam."""
 
 import os
+import json
+import re
 import shutil
 from typing import Any
 
@@ -8,15 +10,53 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
 
 
-def build_model(*, num_ctx: int | None = None) -> ChatOllama:
+class GitHubClientError(RuntimeError):
+    """An actionable adapter error whose text is safe to show."""
+
+
+def build_model(model_name: str | None = None, *, num_ctx: int | None = None) -> ChatOllama:
     context = num_ctx if num_ctx is not None else int(os.getenv("HELP_WANTED_NUM_CTX", "8192"))
     if context < 1:
         raise ValueError("The model context window must be a positive number.")
     return ChatOllama(
-        model=os.getenv("HELP_WANTED_MODEL", "gemma4:e4b"), num_ctx=context,
+        model=model_name if model_name is not None else os.getenv("HELP_WANTED_MODEL", "gemma4:e4b"), num_ctx=context,
         base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
         temperature=0,
     )
+
+
+async def get_github_username(tools: list[Any]) -> str:
+    """Resolve the signed-in Contributor before choosing any output directory."""
+    tool = next((tool for tool in tools if tool.name == "get_me"), None)
+    if tool is None:
+        raise GitHubClientError("GitHub's sign-in check is unavailable. Reconnect its tools and try again.")
+    try:
+        payload = await tool.ainvoke({})
+        # MCP adapters can return a dictionary, JSON text, or text content blocks.
+        for _ in range(10):
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            elif isinstance(payload, list):
+                payload = "".join(
+                    block["text"] for block in payload
+                    if isinstance(block, dict) and block.get("type") == "text"
+                )
+            elif isinstance(payload, dict):
+                if payload.get("isError"):
+                    break
+                login = payload.get("login")
+                if isinstance(login, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login):
+                    return login
+                key = next((key for key in ("structuredContent", "structured_content", "content") if key in payload), None)
+                if key is None:
+                    break
+                payload = payload[key]
+            else:
+                break
+    except Exception:
+        # Never surface an HTTP/tool exception: it may contain the bearer token.
+        pass
+    raise GitHubClientError("GitHub could not confirm your username. Check your sign-in and connection, then try again.") from None
 
 
 async def load_github_tools(token: str, *, transport: str = "auto") -> list[Any]:
@@ -38,10 +78,10 @@ async def load_github_tools(token: str, *, transport: str = "auto") -> list[Any]
             return await client.get_tools()
         except Exception:
             if transport == "hosted":
-                raise RuntimeError("GitHub's hosted tools are unavailable. Try the local GitHub MCP server.") from None
+                raise GitHubClientError("GitHub's hosted tools are unavailable. Try the local GitHub MCP server.") from None
     binary = shutil.which("github-mcp-server")
     if not binary:
-        raise RuntimeError(
+        raise GitHubClientError(
             "GitHub's tools are unavailable. Install the fallback with "
             "`brew install github-mcp-server`, then try again."
         ) from None
@@ -52,4 +92,4 @@ async def load_github_tools(token: str, *, transport: str = "auto") -> list[Any]
     try:
         return await client.get_tools()
     except Exception:
-        raise RuntimeError("The local GitHub tools could not start. Check your sign-in and try again.") from None
+        raise GitHubClientError("The local GitHub tools could not start. Check your sign-in and try again.") from None
