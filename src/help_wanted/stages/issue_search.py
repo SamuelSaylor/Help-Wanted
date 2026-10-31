@@ -59,7 +59,7 @@ def _eligible(item, project, cutoff, beginner_only, structured):
         return None  # This search hit is itself a PR, even when the field is null.
     for key in ("linked_pull_requests", "linked_prs", "closed_by_pull_requests",
                 "has_linked_pr", "has_linked_pull_request"):
-        if key in item and item[key] not in ([], False, {"total_count": 0}):
+        if key in item and not _empty_links(item[key]):
             return None
     number = item.get("number")
     if type(number) is not int or number < 1:
@@ -90,6 +90,13 @@ def _eligible(item, project, cutoff, beginner_only, structured):
 
 def _beginner(labels):
     return any(label.strip().casefold() in {"good first issue", "help wanted"} for label in labels)
+
+
+def _empty_links(value):
+    if value is False or isinstance(value, list) and not value:
+        return True
+    return (isinstance(value, dict) and type(value.get("total_count")) is int
+            and value["total_count"] == 0 and value.get("references", []) == [])
 
 
 def _payload(response, structured=False):
@@ -221,6 +228,7 @@ async def run(context, *, profile, skills, projects):
         indices = list(dict.fromkeys(index for index in ranking.indices if 0 <= index < len(safe)))
         indices.sort(key=lambda index: not _beginner(safe[index].labels))
         selected.extend(safe[index] for index in indices[:3])
+    selected.sort(key=lambda issue: not _beginner(issue.labels))
     if len(selected) < profile.recommendation_count:
         problems.insert(0, f"Found {len(selected)} of {profile.recommendation_count} requested Recommendations. "
                         "Too few issues passed the safety rules and matched the Contributor Profile; the rules were not relaxed.")

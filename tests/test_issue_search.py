@@ -164,7 +164,7 @@ def test_unknown_safety_metadata_is_not_assumed_safe(tmp_path):
     del missing_assignees["assignees"]
     model = Model()
     result = run_search(tmp_path, model, Search([payload(
-        issue(1), missing_assignees, issue(3, assignee="taken"),
+        issue(1, closed_by_pull_requests={"total_count": 0, "references": []}), missing_assignees, issue(3, assignee="taken"),
         issue(4, closed_by_pull_requests={"total_count": 1}),
         issue(5, has_linked_pull_request=True), issue(6, labels=None),
         issue(7, updated_at="2026-10-01"),
@@ -262,3 +262,37 @@ def test_incomplete_search_is_not_presented_as_exhaustive(tmp_path):
     response["incomplete_results"] = True
     result = run_search(tmp_path, Model(), Search([response]))
     assert "more" in result["reason"].lower()
+
+
+@pytest.mark.parametrize("available, expected_calls, expected_issues", [
+    (False, 3, []), (True, 2, [1]),
+])
+def test_shortfall_searches_at_most_two_spares_and_stops_when_filled(tmp_path, available, expected_calls, expected_issues):
+    candidates = CandidateProjects(
+        projects=[project()],
+        spares=[project("example/spare1"), project("example/spare2"), project("example/spare3")],
+    )
+    spare_issue = issue(1, html_url="https://github.com/example/spare1/issues/1")
+    tool = Search([payload(), payload(spare_issue) if available else payload(), payload()])
+    result = run_search(tmp_path, Model(), tool, profile=ContributorProfile(recommendation_count=1), projects=candidates)
+    assert len(tool.calls) == expected_calls
+    assert [i["number"] for i in result["issues"]] == expected_issues
+    if not available:
+        assert "Found 0 of 1" in result["reason"]
+        assert "not relaxed" in result["reason"]
+
+
+def test_initial_candidate_projects_are_all_searched_and_spares_are_not_used_if_enough(tmp_path):
+    candidates = CandidateProjects(projects=[project(), project("example/second")], spares=[project("example/spare")])
+    tool = Search([payload(issue(1)), payload()])
+    result = run_search(tmp_path, Model(), tool, profile=ContributorProfile(recommendation_count=1), projects=candidates)
+    assert len(tool.calls) == 2
+    assert [i["number"] for i in result["issues"]] == [1]
+
+
+def test_beginner_priority_applies_across_candidate_projects_before_recommendation_truncation(tmp_path):
+    candidates = CandidateProjects(projects=[project(), project("example/second")])
+    tool = Search([payload(issue(1, labels=[])), payload(issue(2, html_url="https://github.com/example/second/issues/2"))])
+    result = run_search(tmp_path, Model(), tool, projects=candidates,
+                        profile=ContributorProfile(beginner_friendly_only=False, recommendation_count=1))
+    assert [i["number"] for i in result["issues"]] == [2, 1]
