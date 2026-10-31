@@ -7,7 +7,7 @@ Find a first open-source issue that fits what you know, what you care about, and
 Built for Hacktoberfest Hack Day San Antonio, October 31, 2026: MLH Best Open-Source AI Project (Gemma 4) and OSPO Open Source Education.
 
 > [!WARNING]
-> **Work in progress, not a verified end-to-end demo.** The questionnaire is teammate-owned work in [#6](https://github.com/SamuelSaylor/Hack-Day-2026/issues/6); its current placeholder supplies a default Contributor Profile rather than asking questions. Issue search is also being integrated. The full live Gemma run has **not been verified because Ollama is absent from the preparation environment**. [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9) remains blocked; this guide does not establish fresh-clone, demo, or production readiness.
+> **Work in progress, not a verified end-to-end demo.** The questionnaire is teammate-owned work in [#6](https://github.com/SamuelSaylor/Hack-Day-2026/issues/6); its current placeholder supplies a default Contributor Profile rather than asking questions. The full live Gemma run has **not been verified because Ollama is absent from the preparation environment**. [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9) remains blocked; this guide does not establish fresh-clone, demo, or production readiness.
 
 ## Get ready
 
@@ -21,10 +21,10 @@ You need a terminal, an internet connection, a GitHub account, and:
 
 ## Clone and run
 
-These steps start the CLI, including Ollama setup and GitHub sign-in. Until the work listed above is merged, a run uses default answers and incomplete stages; it should not be treated as a completed Recommendation demo.
+These steps use the implementation's integration branch and start the CLI, including Ollama setup and GitHub sign-in. Until the questionnaire is integrated, a run uses default answers; it should not be treated as a completed Recommendation demo.
 
 ```bash
-git clone https://github.com/SamuelSaylor/Hack-Day-2026.git
+git clone --branch integration/help-wanted-spec-1 https://github.com/SamuelSaylor/Hack-Day-2026.git
 cd Hack-Day-2026
 uv python install 3.13
 uv run --python 3.13 help-wanted
@@ -88,12 +88,12 @@ The target flow is a fixed LangGraph sequence, not a chatbot deciding which stag
 2. **Questionnaire:** create a Contributor Profile from optional answers about interests, coding and spoken languages, experience, goals, and time. Gemma extracts search keywords from free text. **This stage currently returns defaults; #6 owns the interactive questionnaire.**
 3. **Skill scan:** combine experience answers with public repositories and merged pull requests for a Gemma-written Skill Assessment. No public history means “new to GitHub,” not “cannot program.”
 4. **Discovery:** Gemma writes repository searches and ranks Candidate Projects using their metadata and README excerpts. Code applies popularity and recent-push filters. Discovery selects twice the requested Recommendation count, at most six, with up to two spare projects. **Contributor-count filtering is out of scope:** `contributor_count` is retained only for Contributor Profile compatibility, not filtering or ranking.
-5. **Issue search:** the intended stage searches projects sequentially, filters issues before Gemma sees them, and lets Gemma choose the best one to three per project, considering available time. This stage is being integrated.
+5. **Issue search:** search projects sequentially, filter issues before Gemma sees them, and let Gemma choose the best one to three per project, considering available time.
 6. **Recommendations:** Gemma writes why each selected issue fits, what you will learn, and concrete first steps in the first language in `spoken_languages`. Code preserves GitHub's original issue titles and links.
 
-The issue-search contract requires open issues, no assignee, an update within six months, and no closing-reference pull request link (`-linked:pr`). Arbitrary PR mentions are **not** covered by that linked-PR definition. `good first issue` and `help wanted` labels rank higher and are required when `beginner_friendly_only` is set. If too few issues pass, search up to two spare Candidate Projects, then explain the shortfall rather than relax the rules. These are the intended guarantees, not evidence of a completed live run.
+Issue search requires open issues, no assignee, an update within six months, and no closing-reference pull request link (`-linked:pr`). Arbitrary PR mentions are **not** covered by that linked-PR definition. `good first issue` and `help wanted` labels rank higher and are required when `beginner_friendly_only` is set. If too few issues pass, search up to two spare Candidate Projects, then explain the shortfall rather than relax the rules. These checks are covered by offline tests, not a completed live run.
 
-Gemma makes the matching decisions: search planning, evidence-based assessment, project/issue ranking, and personalized explanations. Python owns validation, issue eligibility, bounded GitHub calls, and output formatting. The questionnaire's keyword extraction and issue selection await their stage integration; the implemented assessment, discovery, and Recommendation-writing stages already call the model adapter.
+Gemma makes the matching decisions: search planning, evidence-based assessment, project/issue ranking, and personalized explanations. Python owns validation, issue eligibility, bounded GitHub calls, and output formatting. The questionnaire's keyword extraction awaits #6; assessment, discovery, issue selection, and Recommendation writing call the model adapter.
 
 ## Saved work and starting over
 
@@ -121,7 +121,7 @@ Use `--fresh` after changing model settings if you want newly generated results.
 
 Repository history credits **Simon ([@simonteague6](https://github.com/simonteague6))** and **Samuel ([@SamuelSaylor](https://github.com/SamuelSaylor))**. Samuel supplied the hand-drawn logo. The project is shared under the [MIT license](LICENSE).
 
-**Built on October 31, 2026:** the Help Wanted Python package and CLI with Ollama/GitHub setup wiring, validated stage contracts and saved-output pipeline, GitHub sign-in helper, Ollama setup helper, public-history Skill Assessment, Gemma-driven discovery, Recommendation writing, and offline tests. The questionnaire and issue search are integration work in progress; this README is documentation preparation, not a claim that those blockers or the live demo are complete.
+**Built on October 31, 2026:** the Help Wanted Python package and CLI with Ollama/GitHub setup wiring, validated stage contracts and saved-output pipeline, GitHub sign-in helper, Ollama setup helper, public-history Skill Assessment, Gemma-driven discovery, deterministic issue filtering and Gemma issue selection, Recommendation writing, and offline tests. The questionnaire is teammate-owned integration work in progress; the live demo remains unverified.
 
 **Reused, not trained or built by this team:**
 
