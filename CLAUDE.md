@@ -10,10 +10,13 @@ Repo is currently empty (LICENSE, README only). Stack: Python, CLI. Libraries an
 
 ## Planned pipeline
 
-1. Questionnaire: programming familiarity, interests, prior contributions.
-2. Generate a profile markdown file from the answers. If the user opts in, also generate topic files (e.g. `Python.md`, `Engineering.md`).
-3. Scan GitHub for projects matching the profile.
-4. Later stages are still being planned.
+1. Questionnaire (15 questions, **every question is optional**; unanswered ones fall back to defaults). Mostly multiple choice, with a few free-text fields. Topics: optional GitHub username, years programming, Git/GitHub experience, past contributions, programming languages, spoken languages, industry/interests, contribution goal, time available, project popularity, contributor-count range, beginner-friendly only, recent-activity requirement, number of projects to recommend, whether to generate topic files.
+2. Gemma writes `master.md` from the answers: all information the GitHub search needs. This is the search's input.
+3. If the user opts in, Gemma also writes topic profiles (e.g. `Python.md`, `Engineering.md`) into a `Questionaire/` folder (spelling is intentional).
+4. Scan GitHub using `master.md` (language, topic, stars, contributors, good-first-issue, recent activity).
+5. Later stages are still being planned.
+
+Free-text answers (interests) are where Gemma turns input into search keywords and profiles.
 
 Gemma must be central to the work (judged on this), not a chat wrapper.
 
