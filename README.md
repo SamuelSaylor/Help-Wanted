@@ -2,6 +2,8 @@
   <img src="logo.png" width="160" alt="Help Wanted logo">
 </p>
 
+<p align="center">Nathan Davies · Samuel Saylor · Simon Teague · Fredy Mata</p>
+
 # Help Wanted
 
 Help Wanted finds a first open-source issue that fits what you know, what you care about, and how much time you have. You run one command, answer a few optional questions, and get a short list of real GitHub issues with a plain explanation of how to start each one, written in your own language.
@@ -82,10 +84,6 @@ GitHub access goes through the [hosted GitHub MCP server](https://github.com/git
 ```bash
 uv run pytest
 ```
-
-## Built by
-
-[@simonteague6](https://github.com/simonteague6) and [@SamuelSaylor](https://github.com/SamuelSaylor). Samuel drew the logo.
 
 **Built on October 31, 2026:** the `help_wanted` package and CLI, including the Ollama setup guide, GitHub sign-in, questionnaire, skill scan, discovery, issue search, recommendation writing, and the offline tests.
 
