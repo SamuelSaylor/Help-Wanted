@@ -265,12 +265,17 @@ def test_cli_does_not_claim_merged_questionnaire_is_missing(external_services):
     assert "interests and experience have not been collected" not in result.output
 
 
-def test_cloud_skill_scan_fits_normal_public_history(external_services, monkeypatch, tmp_path):
+@pytest.mark.parametrize("model_name,num_ctx", [("gemma4:cloud", 131072), ("gemma4:e2b", 8192)])
+def test_skill_scan_fits_normal_public_history(external_services, monkeypatch, tmp_path, model_name, num_ctx):
     from langchain_ollama import ChatOllama
     from help_wanted import clients
     from help_wanted.contracts import ContributorProfile, SkillAssessment
 
     monkeypatch.delenv("HELP_WANTED_NUM_CTX", raising=False)
+    async def prepare(*, console):
+        return model_name
+
+    monkeypatch.setattr(cli, "prepare_ollama", prepare)
     folder = tmp_path / ".help-wanted/octocat"
     folder.mkdir(parents=True)
     (folder / "profile.json").write_text(ContributorProfile().model_dump_json())
@@ -302,13 +307,21 @@ def test_cloud_skill_scan_fits_normal_public_history(external_services, monkeypa
     calls = []
 
     def structured(model, schema, *, method):
-        assert model.model == "gemma4:cloud"
-        assert model.num_ctx == 131072
+        assert model.model == model_name
+        assert model.num_ctx == num_ctx
         assert schema is SkillAssessment
 
         class Reply:
             async def ainvoke(self, messages):
                 calls.append(messages)
+                data = json.loads(messages[-1]["content"])
+                if model_name == "gemma4:cloud":
+                    assert "Return only a valid JSON object" in messages[0]["content"]
+                    assert json.dumps(schema.model_json_schema()) in messages[0]["content"]
+                    assert len(data["repositories"]) == 20
+                else:
+                    assert 0 < len(data["repositories"]) < 20
+                    assert 0 < len(data["merged_pull_requests"]) < 20
                 return {"username": "octocat", "experience_level": "intermediate", "summary": "Public contributions"}
 
         return Reply()
@@ -320,6 +333,7 @@ def test_cloud_skill_scan_fits_normal_public_history(external_services, monkeypa
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
     assert (folder / "skills.json").exists()
+    assert len(json.loads((folder / "skills.json").read_text())["evidence"]) == 40
 
 
 @pytest.mark.parametrize("interest", ["music", "music " * 2000])

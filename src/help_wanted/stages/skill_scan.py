@@ -4,6 +4,7 @@ import json
 
 from help_wanted.contracts import SkillAssessment
 from help_wanted.github import normalize, search
+from help_wanted.model_context import ModelContextError, budget_messages
 
 
 def _payload(value):
@@ -51,7 +52,7 @@ async def run(context, *, profile):
             "number": pr.get("number"),
             "url": str(pr.get("html_url") or pr.get("url") or "")[:300],
         } for pr in pull_requests]
-        assessment = await context.structured(SkillAssessment, [
+        messages = [
             {"role": "system", "content": (
                 "Write a Skill Assessment for this Contributor using both their experience "
                 "answers and public GitHub activity. Derive experience_level (beginner, "
@@ -73,7 +74,21 @@ async def run(context, *, profile):
                 "repositories": repositories,
                 "merged_pull_requests": pull_requests,
             })},
-        ])
+        ]
+        # Sample history rather than raising an input-size error for normal
+        # GitHub activity on small machines. Keep all evidence in skills.json.
+        data = json.loads(messages[-1]["content"])
+        for count in (20, 10, 5, 2, 1):
+            data["repositories"] = repositories[:count]
+            data["merged_pull_requests"] = pull_requests[:count]
+            messages[-1]["content"] = json.dumps(data)
+            try:
+                budget_messages(context.model, SkillAssessment, messages)
+                break
+            except ModelContextError:
+                if count == 1:
+                    raise
+        assessment = await context.structured(SkillAssessment, messages)
         languages = list(dict.fromkeys([
             *profile.coding_languages,
             *(repo["language"] for repo in repositories if repo["language"]),
