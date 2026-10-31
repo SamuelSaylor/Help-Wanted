@@ -13,11 +13,11 @@ _Avoid_: User, human, developer
 ### What we know about the Contributor
 
 **Contributor Profile**:
-What the Contributor wants and how experienced they are: interests, industries, kinds of project, languages they code in, languages they speak, and how many Recommendations they want. Comes from the questionnaire.
-_Avoid_: User profile, context profile, preferences
+The Contributor's own answers to the questionnaire: what they want to work on, the languages they code in and speak, how much time they have, what they say about their experience, and how many Recommendations they want.
+_Avoid_: User profile, context profile, preferences, master profile
 
 **Skill Assessment**:
-What the Contributor can already do, as shown by their public GitHub activity. Optional: a Contributor with no GitHub history has none.
+What the Contributor can already do, judged from what they say about their experience and from their public GitHub activity.
 _Avoid_: Technical abilities, skills file, contributions file
 
 ### What we find

@@ -13,24 +13,33 @@ Use the terms in `GLOSSARY.md` (Contributor, Contributor Profile, Skill Assessme
 One command, no subcommands: a beginner runs it once and goes through every stage. A LangGraph graph runs these nodes in a fixed order:
 
 1. **Setup guide**: checks Ollama is installed and running, pulls the model, offers an Ollama cloud model if the machine can't run one locally, and signs the Contributor in to GitHub. Explains every fix in plain words.
-2. **Questionnaire** → Contributor Profile (a teammate owns this stage). 15 questions, **every question is optional**; unanswered ones fall back to defaults. Mostly multiple choice, with a few free-text fields. Topics: optional GitHub username, years programming, Git/GitHub experience, past contributions, programming languages, spoken languages, industry/interests, contribution goal, time available, project popularity, contributor-count range, beginner-friendly only, recent-activity requirement, number of projects to recommend, whether to generate topic files. Gemma turns the free-text answers (interests) into search keywords. Gemma writes `master.md` from the answers, and if the Contributor opts in, topic profiles (e.g. `Python.md`, `Engineering.md`) into a `Questionaire/` folder (spelling is intentional).
-3. **Skill scan** of the signed-in Contributor's public GitHub (username from the MCP `get_me` tool) → Skill Assessment. With no GitHub history, the Skill Assessment says "new to GitHub" and discovery favours projects with many beginner-labelled issues.
-4. **Discovery**: Gemma writes GitHub repository searches from the Profile and Assessment (language, topic, stars, contributors, good-first-issue count, recent activity), then reranks the results → Candidate Projects. Candidate Projects = `recommendation_count × 2`, at most 6.
-5. **Issue search**: one short run per Candidate Project, run sequentially (Ollama queues requests, and semantic issue search allows 10 requests/min). Gemma writes the query; code calls `search_issues` and filters the results before Gemma sees them: open, no assignee, no linked pull request, updated in the last 6 months. Issues labelled `good first issue` or `help wanted` rank higher but are not required. Gemma then picks the best 1–3. If too few issues pass, search up to 2 more Candidate Projects, then show fewer Recommendations and say why in plain words. Never relax the filter.
+2. **Questionnaire** → Contributor Profile (a teammate owns this stage). Every question is optional; unanswered ones fall back to defaults. Mostly multiple choice, with a few free-text fields. Gemma pulls `search_keywords` out of the free-text answers.
+3. **Skill scan** → Skill Assessment. Combines the Contributor's own answers (years programming, Git experience, past contributions) with their public GitHub activity (username from the MCP `get_me` tool), and works out `experience_level`. With no GitHub history, it says "new to GitHub" and discovery favours projects with many beginner-labelled issues.
+4. **Discovery**: Gemma writes GitHub repository searches from the Profile and Assessment, then reranks the results → Candidate Projects. `project_popularity`, `contributor_count` and `recent_activity` become search filters (`stars:`, `pushed:>`). Candidate Projects = `recommendation_count × 2`, at most 6.
+5. **Issue search**: one short run per Candidate Project, run sequentially (Ollama queues requests, and semantic issue search allows 10 requests/min). Gemma writes the query; code calls `search_issues` and filters the results before Gemma sees them: open, no assignee, no linked pull request, updated in the last 6 months. Issues labelled `good first issue` or `help wanted` rank higher; with `beginner_friendly_only` they are required. Gemma then picks the best 1–3, preferring smaller issues when `time_available` is short. If too few issues pass, search up to 2 more Candidate Projects, then show fewer Recommendations and say why in plain words. Never relax the filter.
 6. **Recommendations**: for each issue, Gemma writes why it fits the Contributor, what they will learn, and first steps, in the Contributor's native language (issue titles stay as on GitHub).
 
 Each stage writes a Pydantic-validated JSON file (the source of truth) to `.help-wanted/<username>/` (`profile.json`, `skills.json`, `projects.json`, `issues.json`), plus a Markdown file for people to read (`recommendations.md`). On startup, a stage whose output file exists is skipped; `--fresh` reruns everything.
 
-`profile.json` is the contract between the questionnaire and every later stage. **Open:** reconcile this with the questionnaire design in step 2 (its extra fields, `master.md` as the search input, the optional username):
+`profile.json` is the contract between the questionnaire and every later stage. This block fixes the field names and types; the questionnaire owns the exact choices:
 
 ```
-interests: list[str]          # e.g. ["music", "games"]
-industries: list[str]         # e.g. ["healthcare", "education"]
-project_types: list[str]      # e.g. ["web app", "CLI tool", "library"]
-coding_languages: list[str]   # e.g. ["Python", "JavaScript"]
-spoken_languages: list[str]   # first entry = native language, used for Recommendations
-experience_level: "none" | "some" | "comfortable"
-recommendation_count: int     # how many Recommendations, e.g. 3
+interests: list[str]              # e.g. ["music", "games"]
+industries: list[str]             # e.g. ["healthcare", "education"]
+search_keywords: list[str]        # Gemma pulls these out of the free-text answers
+project_types: list[str]          # e.g. ["web app", "CLI tool", "library"]
+coding_languages: list[str]       # e.g. ["Python", "JavaScript"]
+spoken_languages: list[str]       # first entry = native language, used for Recommendations
+years_programming: "none" | "<1" | "1-3" | "3+"
+git_experience: "none" | "some" | "comfortable"
+past_contributions: str           # free text
+contribution_goal: str            # e.g. "learn", "portfolio", "give back"
+time_available: "1-2 hours" | "a weekend" | "ongoing"
+project_popularity: "small" | "medium" | "large" | "any"
+contributor_count: "<10" | "10-100" | "100+" | "any"
+recent_activity: "1 month" | "6 months" | "any"
+beginner_friendly_only: bool
+recommendation_count: int         # how many Recommendations, e.g. 3
 ```
 
 ## Stack
