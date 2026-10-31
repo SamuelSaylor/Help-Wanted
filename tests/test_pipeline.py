@@ -10,20 +10,49 @@ from help_wanted.pipeline import run_pipeline
 
 class ScriptedModel:
     def with_structured_output(self, schema, *, method):
-        raise AssertionError("Skeleton must not pretend to make real model decisions")
+        class Reply:
+            async def ainvoke(self, messages):
+                if schema.__name__ == "SearchPlan":
+                    return {"queries": ["Python"]}
+                if schema.__name__ == "RecommendationWriting":
+                    return {
+                        "heading": "Recommendations", "why_heading": "Why it fits",
+                        "learn_heading": "What you will learn", "steps_heading": "First steps",
+                        "notice": "Found 0 of 3: no issues met the rules. Try again later.",
+                        "narratives": [],
+                    }
+                raise AssertionError(f"Unexpected structured output: {schema.__name__}")
+        return Reply()
+
+
+class GitHubTool:
+    def __init__(self, name, username="octocat"):
+        self.name = name
+        self.username = username
+
+    async def ainvoke(self, arguments):
+        if self.name == "get_me":
+            return {"login": self.username}
+        return {"items": [], "total_count": 0}
+
+
+def github_tools(username="octocat"):
+    return [GitHubTool(name, username) for name in (
+        "get_me", "search_repositories", "search_pull_requests", "get_file_contents", "search_issues",
+    )]
 
 
 def test_pipeline_writes_validated_stage_outputs(tmp_path):
     result = asyncio.run(run_pipeline(
-        ScriptedModel(), [], profile=ContributorProfile(),
+        ScriptedModel(), github_tools(), profile=ContributorProfile(),
         username="octocat", output_root=tmp_path,
     ))
     folder = tmp_path / "octocat"
     assert json.loads((folder / "profile.json").read_text())["spoken_languages"] == ["English"]
-    assert json.loads((folder / "skills.json").read_text())["experience_level"] == "not assessed"
+    assert json.loads((folder / "skills.json").read_text())["experience_level"] == "new to GitHub"
     assert json.loads((folder / "projects.json").read_text())["projects"] == []
     assert json.loads((folder / "issues.json").read_text())["issues"] == []
-    assert "placeholder" in (folder / "recommendations.md").read_text().lower()
+    assert "Found 0 of 3" in (folder / "recommendations.md").read_text()
     assert result.completed_stages == [
         "setup", "questionnaire", "skill_scan", "discovery", "issue_search", "recommendations",
     ]
@@ -31,10 +60,10 @@ def test_pipeline_writes_validated_stage_outputs(tmp_path):
 
 def test_pipeline_reuses_saved_profile_and_fresh_replaces_it(tmp_path):
     async def run():
-        await run_pipeline(ScriptedModel(), [], username="octocat", output_root=tmp_path)
+        await run_pipeline(ScriptedModel(), github_tools(), username="octocat", output_root=tmp_path)
         changed = ContributorProfile(spoken_languages=["Spanish"])
         cached = await run_pipeline(
-            ScriptedModel(), [], profile=changed, username="octocat", output_root=tmp_path,
+            ScriptedModel(), github_tools(), profile=changed, username="octocat", output_root=tmp_path,
         )
         assert cached.skipped_stages == [
             "questionnaire", "skill_scan", "discovery", "issue_search", "recommendations",
@@ -42,7 +71,7 @@ def test_pipeline_reuses_saved_profile_and_fresh_replaces_it(tmp_path):
         assert cached.completed_stages == ["setup"]
         assert json.loads((tmp_path / "octocat/profile.json").read_text())["spoken_languages"] == ["English"]
         fresh = await run_pipeline(
-            ScriptedModel(), [], profile=changed, username="octocat", output_root=tmp_path, fresh=True,
+            ScriptedModel(), github_tools(), profile=changed, username="octocat", output_root=tmp_path, fresh=True,
         )
         assert fresh.skipped_stages == []
         assert json.loads((tmp_path / "octocat/profile.json").read_text())["spoken_languages"] == ["Spanish"]
@@ -62,7 +91,7 @@ def test_invalid_cached_output_is_not_silently_used(tmp_path):
 def test_contributors_have_separate_output_folders(tmp_path):
     for username, language in [("octocat", "Spanish"), ("another-contributor", "French")]:
         asyncio.run(run_pipeline(
-            ScriptedModel(), [], username=username, output_root=tmp_path,
+            ScriptedModel(), github_tools(username), username=username, output_root=tmp_path,
             profile=ContributorProfile(spoken_languages=[language]),
         ))
     assert json.loads((tmp_path / "octocat/profile.json").read_text())["spoken_languages"] == ["Spanish"]
@@ -87,6 +116,12 @@ def test_stage_plugins_use_structured_model_and_only_allowed_async_tools(tmp_pat
 
             class Reply:
                 async def ainvoke(self, messages):
+                    if schema.__name__ == "RecommendationWriting":
+                        return {
+                            "heading": "Recommendations", "why_heading": "Why",
+                            "learn_heading": "Learn", "steps_heading": "Steps",
+                            "notice": "Found 0 of 3 eligible issues. Try again later.", "narratives": [],
+                        }
                     assert messages == [{"role": "user", "content": "Assess octocat"}]
                     return {"username": "octocat", "experience_level": "beginner", "summary": "New Contributor"}
 

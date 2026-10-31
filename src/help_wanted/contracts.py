@@ -50,10 +50,12 @@ class CandidateProject(Contract):
     language: str | None = None
     stars: int = 0
     reason: str = ""
+    readme_status: str = ""
 
 
 class CandidateProjects(Contract):
     projects: list[CandidateProject] = Field(default_factory=list)
+    spares: list[CandidateProject] = Field(default_factory=list)
     reason: str = ""
 
 
