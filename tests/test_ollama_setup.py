@@ -3,6 +3,7 @@
 import asyncio
 from io import StringIO
 import json
+import subprocess
 from unittest.mock import Mock
 
 import httpx
@@ -31,6 +32,9 @@ def isolated_machine(monkeypatch):
 
     def respond(request):
         requests.append(request)
+        if request.url.path == "/api/me":
+            assert request.method == "POST"
+            return httpx.Response(200, json={"name": "contributor"})
         assert request.url.path == "/api/tags"
         return httpx.Response(200, json={"models": [
             {"name": f"gemma4:{tag}"} for tag in ("e2b", "e4b", "12b", "26b", "cloud")
@@ -66,20 +70,25 @@ def test_contributor_can_choose_cloud_on_a_capable_machine(monkeypatch):
     text = output.getvalue()
     assert "sends model inputs to Ollama's service" in text
     assert "internet access and an Ollama account" in text
-    assert "ollama signin" in text
+    assert "Signed in to Ollama" in text
+    assert "ollama signin" not in text
 
 
 @pytest.mark.parametrize(("ram_gb", "expected"), [
     (8, "gemma4:e2b"), (12, "gemma4:e4b"),
     (16, "gemma4:12b"), (32, "gemma4:26b"), (64, "gemma4:26b"),
 ])
-def test_chooses_a_downloaded_model_that_fits_ram(monkeypatch, ram_gb, expected):
+def test_chooses_a_downloaded_model_that_fits_ram(monkeypatch, isolated_machine, ram_gb, expected):
     monkeypatch.setattr("subprocess.run", Mock(return_value=Mock(stdout=str(ram_gb * 1024**3))))
     prompt = Mock(return_value=False)
     monkeypatch.setattr("rich.prompt.Confirm.ask", prompt)
-    assert prepare_ollama(Console(file=StringIO())) == expected
+    output = StringIO()
+    assert prepare_ollama(Console(file=output)) == expected
     prompt.assert_called_once()
     assert "cloud" in prompt.call_args.args[0].lower()
+    assert [request.url.path for request in isolated_machine[1]] == ["/api/tags"]
+    assert "Signed in" not in output.getvalue()
+    assert "ollama signin" not in output.getvalue()
 
 
 def test_respects_model_and_host_overrides(monkeypatch, isolated_machine):
@@ -136,7 +145,7 @@ def test_server_start_has_a_bounded_wait(monkeypatch, isolated_machine):
 
 
 @pytest.mark.parametrize("accept", [False, True])
-def test_low_memory_offers_cloud_and_explains_sign_in(monkeypatch, accept):
+def test_low_memory_checks_sign_in_only_after_cloud_is_accepted(monkeypatch, isolated_machine, accept):
     monkeypatch.setattr("subprocess.run", Mock(return_value=Mock(stdout=str(4 * 1024**3))))
     prompt = Mock(side_effect=[False, accept])
     monkeypatch.setattr("rich.prompt.Confirm.ask", prompt)
@@ -146,16 +155,115 @@ def test_low_memory_offers_cloud_and_explains_sign_in(monkeypatch, accept):
     else:
         with pytest.raises(SetupError, match="8 GB"):
             prepare_ollama(Console(file=output))
-    assert "ollama signin" in output.getvalue()
+    assert ("Signed in to Ollama" in output.getvalue()) is accept
+    assert "ollama signin" not in output.getvalue()
+    assert [request.url.path for request in isolated_machine[1]] == (
+        ["/api/tags", "/api/me"] if accept else ["/api/tags"]
+    )
     assert prompt.call_count == 2
     assert "instead" in prompt.call_args.args[0]
 
 
-def test_explicit_cloud_override_explains_sign_in(monkeypatch):
+def test_signed_in_cloud_contributor_continues_without_sign_in(monkeypatch, isolated_machine):
     monkeypatch.setenv("HELP_WANTED_MODEL", "gemma4:cloud")
+    signin = Mock(side_effect=AssertionError("unexpected sign-in"))
+    monkeypatch.setattr("subprocess.run", signin)
     output = StringIO()
     assert prepare_ollama(Console(file=output)) == "gemma4:cloud"
-    assert "ollama signin" in output.getvalue()
+    assert "Signed in to Ollama" in output.getvalue()
+    assert "ollama signin" not in output.getvalue()
+    signin.assert_not_called()
+    assert [request.url.path for request in isolated_machine[1]] == ["/api/tags", "/api/me"]
+
+
+def test_signed_out_cloud_contributor_is_signed_in_before_continuing(monkeypatch, isolated_machine):
+    monkeypatch.setenv("HELP_WANTED_MODEL", "gemma4:cloud")
+    handler, _ = isolated_machine
+    handler.side_effect = [
+        httpx.Response(200, json={"models": []}),
+        httpx.Response(401, json={"error": "unauthorized"}),
+        httpx.Response(401, json={"error": "unauthorized"}),
+        httpx.Response(200, json={"name": "contributor"}),
+        httpx.Response(200, text='{"status":"success"}'),
+    ]
+    signin = Mock(return_value=Mock(returncode=0))
+    monkeypatch.setattr("subprocess.run", signin)
+    monkeypatch.setattr("time.sleep", Mock())
+    output = StringIO()
+
+    assert prepare_ollama(Console(file=output, width=120)) == "gemma4:cloud"
+    signin.assert_called_once_with(["/mock/ollama", "signin"], check=True, timeout=30)
+    assert "browser" in output.getvalue()
+    assert "Signed in to Ollama" in output.getvalue()
+    assert [call.args[0].url.path for call in handler.call_args_list] == [
+        "/api/tags", "/api/me", "/api/me", "/api/me", "/api/pull",
+    ]
+    for call in handler.call_args_list[1:4]:
+        assert call.args[0].method == "POST"
+
+
+@pytest.mark.parametrize("failure", [
+    OSError("private process details"),
+    subprocess.CalledProcessError(1, "ollama", output="private process details"),
+    subprocess.TimeoutExpired("ollama", 30, output="private process details"),
+])
+def test_sign_in_command_failure_stops_setup_with_safe_instructions(monkeypatch, isolated_machine, failure):
+    monkeypatch.setenv("HELP_WANTED_MODEL", "gemma4:cloud")
+    handler, _ = isolated_machine
+    handler.side_effect = [
+        httpx.Response(200, json={"models": []}), httpx.Response(401),
+    ]
+    monkeypatch.setattr("subprocess.run", Mock(side_effect=failure))
+    output = StringIO()
+
+    with pytest.raises(SetupError, match="ollama signin") as error:
+        prepare_ollama(Console(file=output))
+    assert "private process details" not in str(error.value)
+    assert "Signed in to Ollama" not in output.getvalue()
+    assert handler.call_count == 2
+
+
+def test_unfinished_browser_sign_in_has_a_bounded_wait(monkeypatch, isolated_machine):
+    monkeypatch.setenv("HELP_WANTED_MODEL", "gemma4:cloud")
+    handler, _ = isolated_machine
+    handler.side_effect = lambda request: (
+        httpx.Response(200, json={"models": []})
+        if request.url.path == "/api/tags" else httpx.Response(401)
+    )
+    signin = Mock(return_value=Mock(returncode=0))
+    monkeypatch.setattr("subprocess.run", signin)
+    monkeypatch.setattr("time.sleep", Mock())
+    output = StringIO()
+
+    with pytest.raises(SetupError, match="within 3 minutes"):
+        prepare_ollama(Console(file=output))
+    signin.assert_called_once()
+    assert handler.call_count <= 182
+    assert "Signed in to Ollama" not in output.getvalue()
+    assert all(call.args[0].url.path != "/api/pull" for call in handler.call_args_list)
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(503, text="private account details"),
+    httpx.Response(404), httpx.Response(200, text="invalid"),
+    httpx.Response(200, json={}), httpx.Response(200, json={"name": " "}),
+    httpx.Response(200, json={"name": None}), httpx.Response(200, json=[]),
+    httpx.ReadTimeout("private account details"),
+])
+def test_unavailable_authentication_does_not_launch_sign_in(monkeypatch, isolated_machine, response):
+    monkeypatch.setenv("HELP_WANTED_MODEL", "gemma4:cloud")
+    handler, _ = isolated_machine
+    handler.side_effect = [httpx.Response(200, json={"models": []}), response]
+    signin = Mock(side_effect=AssertionError("unexpected sign-in"))
+    monkeypatch.setattr("subprocess.run", signin)
+    output = StringIO()
+
+    with pytest.raises(SetupError, match="check your sign-in") as error:
+        prepare_ollama(Console(file=output))
+    signin.assert_not_called()
+    assert "private account details" not in str(error.value)
+    assert "Signed in to Ollama" not in output.getvalue()
+    assert handler.call_count == 2
 
 
 def test_missing_model_downloads_with_streamed_progress(isolated_machine):
@@ -198,7 +306,8 @@ def test_download_failures_give_plain_retry_instructions(isolated_machine, respo
 def test_cloud_authorization_failure_explains_sign_in(monkeypatch, isolated_machine):
     monkeypatch.setenv("HELP_WANTED_MODEL", "gemma4:cloud")
     isolated_machine[0].side_effect = [
-        httpx.Response(200, json={"models": []}), httpx.Response(401),
+        httpx.Response(200, json={"models": []}),
+        httpx.Response(200, json={"name": "contributor"}), httpx.Response(401),
     ]
     with pytest.raises(SetupError, match="ollama signin"):
         prepare_ollama(Console(file=StringIO()))

@@ -60,10 +60,9 @@ uv run help-wanted
 
 `HELP_WANTED_NUM_CTX` controls how much text the model can consider at once. The adapter explicitly sets it to **8192** by default because Ollama's default can silently truncate inputs. Start around 8192 on an 8 GB machine; 16384–32768 may suit larger machines, with additional memory use. Stages use fresh conversations and short GitHub/README excerpts to keep inputs bounded.
 
-For cloud inference, keep local Ollama installed and running. Setup explains how to sign in; it does not sign you in automatically. You can also select cloud explicitly:
+For cloud inference, keep local Ollama installed and running. Setup checks your Ollama authentication only when you choose cloud. If you are already authenticated, it says “Signed in to Ollama” and continues. Otherwise, it runs `ollama signin`, which opens Ollama's account-linking page in your browser. Finish signing in there; setup waits up to 3 minutes to confirm authentication before continuing. If the browser does not open, use the link Ollama prints in the terminal. Local models do not require an Ollama account or authentication check. You can also select cloud explicitly:
 
 ```bash
-ollama signin
 export HELP_WANTED_MODEL=gemma4:cloud
 uv run help-wanted
 ```

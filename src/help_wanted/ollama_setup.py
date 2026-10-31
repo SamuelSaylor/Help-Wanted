@@ -68,9 +68,9 @@ def _prepare_ollama(console: Console | None) -> str:
         if "cloud" in model:
             console.print(
                 "The cloud model sends model inputs to Ollama's service and requires "
-                "internet access and an Ollama account. "
-                "Sign in to Ollama by running `ollama signin` in another terminal first."
+                "internet access and an Ollama account."
             )
+            _ensure_cloud_signin(client, binary, console)
         names = {item.get("name") for item in downloaded.get("models", [])}
         if model not in names and f"{model}:latest" not in names:
             try:
@@ -88,6 +88,47 @@ def _prepare_ollama(console: Console | None) -> str:
 def _stop(console: Console, message: str) -> Never:
     console.print(message, markup=False)
     raise SetupError(message) from None
+
+
+def _cloud_signed_in(client: httpx.Client, console: Console, *, timeout: float = 5) -> bool:
+    try:
+        response = client.post("/api/me", timeout=timeout)
+        if response.status_code == 401:
+            return False
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict) or not isinstance(data.get("name"), str) or not data["name"].strip():
+            raise ValueError("Invalid Ollama account")
+    except (httpx.HTTPError, ValueError):
+        _stop(console, "Ollama could not check your sign-in. Check your internet connection and update Ollama, then try again.")
+    return True
+
+
+def _ensure_cloud_signin(client: httpx.Client, binary: str, console: Console) -> None:
+    if _cloud_signed_in(client, console):
+        console.print("Signed in to Ollama.")
+        return
+    console.print(
+        "Opening Ollama sign-in in your browser. Finish signing in there; "
+        "if the browser does not open, use the link printed by Ollama. "
+        "Help Wanted will wait up to 3 minutes."
+    )
+    try:
+        # Ollama opens its account-linking URL and prints it as a browser fallback.
+        # A zero exit status only means it opened sign-in, not that it finished.
+        subprocess.run([binary, "signin"], check=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        _stop(console, "Ollama could not open sign-in. Run `ollama signin`, finish in your browser, then try Help Wanted again.")
+    deadline = time.monotonic() + 180
+    for _ in range(180):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if _cloud_signed_in(client, console, timeout=min(5, remaining)):
+            console.print("Signed in to Ollama.")
+            return
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
+    _stop(console, "Ollama sign-in did not finish within 3 minutes. Finish signing in in your browser, then run Help Wanted again.")
 
 
 def _tags(client: httpx.Client, *, timeout: float = 5) -> dict:
@@ -176,8 +217,7 @@ def _local_model(console: Console) -> str:
         return "gemma4:e2b"
     console.print(
         "Local models need at least 8 GB of memory. Ollama cloud can run the model "
-        "elsewhere; it needs internet access and an Ollama account. "
-        "Run `ollama signin` in another terminal to sign in."
+        "elsewhere; it needs internet access and an Ollama account."
     )
     if Confirm.ask("Use gemma4:cloud instead?", default=False, console=console):
         return "gemma4:cloud"
