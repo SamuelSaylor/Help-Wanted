@@ -25,7 +25,7 @@ def isolated_machine(monkeypatch):
     monkeypatch.setattr("subprocess.Popen", Mock(side_effect=AssertionError("unexpected process")))
     monkeypatch.setattr("subprocess.run", Mock(return_value=Mock(stdout=str(8 * 1024**3))))
     monkeypatch.setattr("platform.system", lambda: "Darwin")
-    monkeypatch.setattr("rich.prompt.Confirm.ask", Mock(side_effect=AssertionError("unexpected prompt")))
+    monkeypatch.setattr("rich.prompt.Confirm.ask", Mock(return_value=False))
     client_type = httpx.Client
     requests = []
 
@@ -51,13 +51,35 @@ def test_missing_ollama_explains_how_to_install(monkeypatch):
     assert "install" in output.getvalue().lower()
 
 
+def test_contributor_can_choose_cloud_on_a_capable_machine(monkeypatch):
+    memory = Mock(return_value=Mock(stdout=str(32 * 1024**3)))
+    monkeypatch.setattr("subprocess.run", memory)
+    prompt = Mock(return_value=True)
+    monkeypatch.setattr("rich.prompt.Confirm.ask", prompt)
+    output = StringIO()
+
+    assert prepare_ollama(Console(file=output, width=120)) == "gemma4:cloud"
+    prompt.assert_called_once()
+    assert "cloud" in prompt.call_args.args[0].lower()
+    assert prompt.call_args.kwargs["default"] is False
+    memory.assert_not_called()
+    text = output.getvalue()
+    assert "sends model inputs to Ollama's service" in text
+    assert "internet access and an Ollama account" in text
+    assert "ollama signin" in text
+
+
 @pytest.mark.parametrize(("ram_gb", "expected"), [
     (8, "gemma4:e2b"), (12, "gemma4:e4b"),
     (16, "gemma4:12b"), (32, "gemma4:26b"), (64, "gemma4:26b"),
 ])
 def test_chooses_a_downloaded_model_that_fits_ram(monkeypatch, ram_gb, expected):
     monkeypatch.setattr("subprocess.run", Mock(return_value=Mock(stdout=str(ram_gb * 1024**3))))
+    prompt = Mock(return_value=False)
+    monkeypatch.setattr("rich.prompt.Confirm.ask", prompt)
     assert prepare_ollama(Console(file=StringIO())) == expected
+    prompt.assert_called_once()
+    assert "cloud" in prompt.call_args.args[0].lower()
 
 
 def test_respects_model_and_host_overrides(monkeypatch, isolated_machine):
@@ -67,17 +89,27 @@ def test_respects_model_and_host_overrides(monkeypatch, isolated_machine):
     assert str(isolated_machine[1][0].url) == "http://127.0.0.1:22434/api/tags"
 
 
+@pytest.mark.parametrize("model", ["gemma4:e2b", "gemma4:12b", "gemma4:cloud"])
+def test_explicit_model_bypasses_choice_and_memory_detection(monkeypatch, model):
+    monkeypatch.setenv("HELP_WANTED_MODEL", model)
+    monkeypatch.setattr("rich.prompt.Confirm.ask", Mock(side_effect=AssertionError("unexpected prompt")))
+    monkeypatch.setattr("subprocess.run", Mock(side_effect=AssertionError("unexpected memory check")))
+    assert prepare_ollama(Console(file=StringIO())) == model
+
+
 def test_starts_a_stopped_local_server_only_after_permission(monkeypatch, isolated_machine):
     handler, _ = isolated_machine
     handler.side_effect = [httpx.ConnectError("offline"), httpx.Response(200, json={
         "models": [{"name": "gemma4:e2b"}],
     })]
-    prompt = Mock(return_value=True)
+    prompt = Mock(side_effect=[True, False])
     start = Mock(return_value=Mock())
     monkeypatch.setattr("rich.prompt.Confirm.ask", prompt)
     monkeypatch.setattr("subprocess.Popen", start)
     assert prepare_ollama(Console(file=StringIO())) == "gemma4:e2b"
-    prompt.assert_called_once()
+    assert prompt.call_count == 2
+    assert "start Ollama" in prompt.call_args_list[0].args[0]
+    assert "cloud" in prompt.call_args_list[1].args[0].lower()
     assert start.call_args.args[0] == ["/mock/ollama", "serve"]
 
 
@@ -106,7 +138,8 @@ def test_server_start_has_a_bounded_wait(monkeypatch, isolated_machine):
 @pytest.mark.parametrize("accept", [False, True])
 def test_low_memory_offers_cloud_and_explains_sign_in(monkeypatch, accept):
     monkeypatch.setattr("subprocess.run", Mock(return_value=Mock(stdout=str(4 * 1024**3))))
-    monkeypatch.setattr("rich.prompt.Confirm.ask", Mock(return_value=accept))
+    prompt = Mock(side_effect=[False, accept])
+    monkeypatch.setattr("rich.prompt.Confirm.ask", prompt)
     output = StringIO()
     if accept:
         assert prepare_ollama(Console(file=output)) == "gemma4:cloud"
@@ -114,6 +147,8 @@ def test_low_memory_offers_cloud_and_explains_sign_in(monkeypatch, accept):
         with pytest.raises(SetupError, match="8 GB"):
             prepare_ollama(Console(file=output))
     assert "ollama signin" in output.getvalue()
+    assert prompt.call_count == 2
+    assert "instead" in prompt.call_args.args[0]
 
 
 def test_explicit_cloud_override_explains_sign_in(monkeypatch):
