@@ -54,6 +54,20 @@ def test_skipping_everything_gives_model_defaults():
     assert profile == ContributorProfile()
 
 
+def test_questionnaire_shows_instructions_once_at_the_start(monkeypatch, capsys):
+    monkeypatch.setattr(questionnaire.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(questionnaire, "QuestionaryPrompter", lambda: Script(*[None] * 15))
+
+    assert run_stage(None) == ContributorProfile()
+
+    output = capsys.readouterr().out
+    assert output.count("Use arrow keys") == 1
+    assert output.count("Every question is optional") == 1
+    assert "Space" in output
+    assert "commas" in output
+    assert sum(line.startswith("• ") for line in output.splitlines()) == 4
+
+
 def test_answers_map_to_contract_values_and_gemma_fills_keywords():
     profile = run_stage(Script(
         "3+ years", None, "fixed a typo",

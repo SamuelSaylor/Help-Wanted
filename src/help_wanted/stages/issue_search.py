@@ -15,7 +15,7 @@ import re
 from time import monotonic
 
 from pydantic import BaseModel, StrictInt
-from rich.console import Console
+from help_wanted.theme import themed_console
 from rich.progress import track
 
 from help_wanted.contracts import IssueSelection, SelectedIssue
@@ -133,7 +133,7 @@ async def run(context, *, profile, skills, projects):
     problems = []
     requests = deque()
     searched = set()
-    console = Console()
+    console = themed_console()
     candidates = [*projects.projects, *getattr(projects, "spares", [])[:2]]
     for position, project in enumerate(track(candidates, description="Searching Candidate Projects", console=console)):
         if position >= len(projects.projects) and len(selected) >= profile.recommendation_count:
