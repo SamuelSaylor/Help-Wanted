@@ -13,6 +13,7 @@ dependencies = [
     "langchain-ollama>=1.1.0",
     "langgraph>=1.2.19",
     "pydantic>=2.14.2",
+    "questionary>=2.1.1",
     "rich>=15.0.0",
     "typer>=0.27.3",
 ]
