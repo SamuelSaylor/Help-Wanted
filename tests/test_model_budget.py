@@ -147,3 +147,24 @@ def test_ollama_invocation_has_the_same_context_and_output_limits_as_guard(tmp_p
     context = StageContext(model, (), "octocat", ContributorProfile(), tmp_path)
     asyncio.run(context.structured(SkillAssessment, [{"role": "user", "content": "Assess octocat"}]))
     assert calls == [(8192, 1024)]
+
+
+def test_local_memory_failure_explains_cloud_alternative_without_raw_error(tmp_path):
+    from ollama import ResponseError
+    from help_wanted.pipeline import ModelInvocationError
+
+    class Unavailable(BudgetModel):
+        def with_structured_output(self, schema, *, method):
+            class Reply:
+                async def ainvoke(self, messages):
+                    raise ResponseError(
+                        "model requires 6.9 GiB but only 4.8 GiB are available secret-token", 500,
+                    )
+            return Reply()
+
+    context = StageContext(Unavailable(), (), "octocat", ContributorProfile(), tmp_path)
+    with pytest.raises(ModelInvocationError) as caught:
+        asyncio.run(context.structured(SkillAssessment, [{"role": "user", "content": "Assess octocat"}]))
+    assert "not have enough free memory" in str(caught.value)
+    assert "HELP_WANTED_MODEL=gemma4:cloud uv run help-wanted" in str(caught.value)
+    assert "secret-token" not in str(caught.value)

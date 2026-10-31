@@ -148,7 +148,9 @@ async def run(context, *, profile, skills, projects):
         console.print(f"Searching Candidate Project: {project.full_name}", markup=False)
         try:
             query = await context.structured(SearchText, [
-                {"role": "system", "content": "Write a short natural-language issue search topic, not GitHub qualifiers."},
+                {"role": "system", "content": "Write a short issue search topic (one or two words), not GitHub qualifiers. "
+                 "Do not include label names such as good first issue, or lists of programming languages. "
+                 "Return an empty query when the Contributor has no specific topic preference."},
                 {"role": "user", "content": json.dumps({"profile": profile.model_dump(), "skills": skills.model_dump(),
                                                            "project": project.model_dump()})},
             ])
@@ -160,24 +162,43 @@ async def run(context, *, profile, skills, projects):
         # Only words survive: Gemma cannot insert/override repository or safety qualifiers.
         topic = " ".join(word for word in re.findall(r"[^\W_]+", query.query, flags=re.UNICODE)
                          if word.upper() not in {"AND", "OR", "NOT"})[:300]
-        arguments = {"query": f"repo:{project.full_name} is:issue is:open no:assignee -linked:pr updated:>={cutoff.date()} {topic}",
-                     "perPage": 100}
-        try:
-            response, structured = await _search(context, arguments, requests, console)
-        except Exception:
-            problems.append("GitHub could not provide verified search results for a Candidate Project. "
-                            "Check your connection or sign-in, then use --fresh to retry later.")
-            continue
-        if response["incomplete_results"] or response["total_count"] > len(response["items"]):
-            problems.append("GitHub returned only part of its search results; more eligible issues may exist.")
+        base = f"repo:{project.full_name} is:issue is:open no:assignee -linked:pr updated:>={cutoff.date()}"
+        # Topic words are preferences, not safety rules. Retry without them if
+        # they hide all eligible work. Separate label searches avoid requiring
+        # both labels and keep unrelated hits out of the first results page.
+        broad = ([f'{base} label:"good first issue"', f'{base} label:"help wanted"']
+                 if profile.beginner_friendly_only else [base])
+        queries = list(dict.fromkeys(([f"{base} {topic}"] if topic else []) + broad))
         safe = []
         seen = set()
-        for item in response.get("items", []):
-            candidate = _eligible(item, project, cutoff, profile.beginner_friendly_only, structured)
-            if candidate and candidate.number not in seen:
-                safe.append(candidate)
-                seen.add(candidate.number)
+        returned = 0
+        failed = False
+        for query_position, search_query in enumerate(queries):
+            if query_position:
+                console.print("No eligible issues yet; trying a broader search with the same safety rules.")
+            try:
+                response, structured = await _search(context, {"query": search_query, "perPage": 100}, requests, console)
+            except Exception:
+                problems.append("GitHub could not provide verified search results for a Candidate Project. "
+                                "Check your connection or sign-in, then use --fresh to retry later.")
+                failed = True
+                break
+            returned += len(response["items"])
+            if response["incomplete_results"] or response["total_count"] > len(response["items"]):
+                problems.append("GitHub returned only part of its search results; more eligible issues may exist.")
+            for item in response["items"]:
+                candidate = _eligible(item, project, cutoff, profile.beginner_friendly_only, structured)
+                if candidate and candidate.number not in seen:
+                    safe.append(candidate)
+                    seen.add(candidate.number)
+            if safe:
+                break
+        console.print(f"{project.full_name}: {returned} search hits, {len(safe)} eligible issues.", markup=False)
         if not safe:
+            if not failed:
+                detail = ("GitHub returned no search hits" if not returned else
+                          f"none of the {returned} search hits passed the safety and beginner-label checks")
+                problems.append(f"{project.full_name}: {detail}.")
             continue
         safe.sort(key=lambda issue: not _beginner(issue.labels))
         # Bound the fresh Gemma conversation for an 8K context window.
@@ -199,10 +220,12 @@ async def run(context, *, profile, skills, projects):
             problems.append("Gemma could not select issues for a Candidate Project. Check Ollama and use --fresh to retry.")
             continue
         indices = list(dict.fromkeys(index for index in ranking.indices if 0 <= index < len(safe)))
+        if not indices:
+            problems.append(f"{project.full_name}: {len(safe)} eligible issues were found, but Gemma selected none.")
         indices.sort(key=lambda index: not _beginner(safe[index].labels))
         selected.extend(safe[index] for index in indices[:3])
     selected.sort(key=lambda issue: not _beginner(issue.labels))
     if len(selected) < profile.recommendation_count:
         problems.insert(0, f"Found {len(selected)} of {profile.recommendation_count} requested Recommendations. "
-                        "Too few issues passed the safety rules and matched the Contributor Profile; the rules were not relaxed.")
+                        "The searches did not produce enough verified selections; safety rules were not relaxed.")
     return IssueSelection(issues=selected, reason=" ".join(dict.fromkeys(problems)))

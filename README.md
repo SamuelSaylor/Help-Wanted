@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" width="160" alt="Help Wanted logo">
+  <img src="https://raw.githubusercontent.com/SamuelSaylor/Help-Wanted/main/logo.png" width="160" alt="Help Wanted logo">
 </p>
 
 <p align="center">Nathan Davies · Samuel Saylor · Simon Teague · Fredy Mata</p>
@@ -14,7 +14,7 @@ Gemma 4 runs locally through Ollama and makes the decisions at every stage: it t
 
 Most people who have never contributed to open source can't tell which projects are friendly, which issues are still free, or which ones match their skills. A "good first issue" search gives them links but no reason to pick one and no idea what to do next. This is aimed at beginners: high schoolers, non-CS majors, first-generation students, and people whose first language isn't English.
 
-The project is MIT licensed, and issues and pull requests are welcome. [GLOSSARY.md](GLOSSARY.md) and [AGENTS.md](AGENTS.md) explain the terms and design decisions before you read the code.
+The project is MIT licensed, and issues and pull requests are welcome. [GLOSSARY.md](https://github.com/SamuelSaylor/Help-Wanted/blob/main/GLOSSARY.md) and [AGENTS.md](https://github.com/SamuelSaylor/Help-Wanted/blob/main/AGENTS.md) explain the terms and design decisions before you read the code.
 
 ## How it works
 
@@ -31,21 +31,21 @@ Results are saved to `.help-wanted/<github-username>/` as validated JSON (`profi
 
 ## Run it
 
-You need [Git](https://git-scm.com/downloads), [uv](https://docs.astral.sh/uv/getting-started/installation/), [Ollama](https://ollama.com/download) (installed and running), and a GitHub account. uv installs Python 3.13 and the dependencies for you.
+You need Python 3.13 or newer, [Ollama](https://ollama.com/download) (installed and running), and a GitHub account. Install with [pipx](https://pipx.pypa.io/) or [uv](https://docs.astral.sh/uv/getting-started/installation/), then run it:
 
 ```bash
-git clone --branch integration/help-wanted-spec-1 https://github.com/SamuelSaylor/Hack-Day-2026.git
-cd Hack-Day-2026
-uv python install 3.13
-uv run --python 3.13 help-wanted
+pipx install help-wanted
+help-wanted
 ```
+
+With uv, use `uv tool install help-wanted` instead. To run from source, clone the repo and use `uv run help-wanted` inside it.
 
 There are no subcommands. The setup guide downloads the model with a progress bar and walks you through GitHub sign-in. It does not install Ollama for you, but it tells you where to get it.
 
 To change your answers, or to rerun every stage:
 
 ```bash
-uv run help-wanted --fresh
+help-wanted --fresh
 ```
 
 A rerun otherwise reuses saved stages, so a failure late in the pipeline doesn't cost you the questionnaire.

@@ -1,12 +1,14 @@
 """The single async test seam; dependencies are supplied by the caller."""
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
+from ollama import ResponseError
 
 from help_wanted.contracts import (
     CandidateProjects, ContributorProfile, IssueSelection, PipelineResult,
@@ -15,7 +17,7 @@ from help_wanted.contracts import (
 from help_wanted.stages import (
     discovery, issue_search, questionnaire, recommendations, setup, skill_scan,
 )
-from help_wanted.model_context import budget_messages, default_context_window, OUTPUT_TOKENS
+from help_wanted.model_context import budget_messages, default_context_window, is_cloud_model, OUTPUT_TOKENS
 
 
 STAGE_TOOLS = {
@@ -24,6 +26,10 @@ STAGE_TOOLS = {
     "discovery": ("search_repositories", "get_file_contents"),
     "issue_search": ("search_issues",), "recommendations": (),
 }
+
+
+class ModelInvocationError(RuntimeError):
+    """An actionable model error whose text is safe to display."""
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,14 @@ class StageContext:
 
     async def structured(self, schema: type[BaseModel], messages: list) -> BaseModel:
         """No stored conversation: pass only this stage's compact inputs."""
+        if is_cloud_model(getattr(self.model, "model", "")):
+            # Cloud models may ignore Ollama's format parameter. Supply the
+            # contract in the prompt too, and include it in the input budget.
+            messages = [{"role": "system", "content": (
+                "Return only a valid JSON object matching this JSON schema. "
+                "Do not include explanations or Markdown fences. JSON schema: "
+                + json.dumps(schema.model_json_schema(), ensure_ascii=False)
+            )}, *messages]
         messages = budget_messages(self.model, schema, messages)
         model = self.model
         # Explicit finite generation headroom also applies to externally supplied
@@ -54,7 +68,18 @@ class StageContext:
                 "num_predict": model.num_predict if model.num_predict and model.num_predict > 0 else OUTPUT_TOKENS,
             })
         runnable = model.with_structured_output(schema, method="json_schema")
-        value = await runnable.ainvoke(messages)
+        try:
+            value = await runnable.ainvoke(messages)
+        except ResponseError as error:
+            if "model requires" in error.error and "available" in error.error:
+                raise ModelInvocationError(
+                    "Ollama does not have enough free memory to load this local model. "
+                    "Close other memory-heavy apps, or run "
+                    "`HELP_WANTED_MODEL=gemma4:cloud uv run help-wanted` to use Ollama cloud. "
+                    "Cloud requires internet access and an Ollama account. "
+                    "Increasing HELP_WANTED_NUM_CTX will not fix this memory error."
+                ) from None
+            raise
         return schema.model_validate(value)
 
 
