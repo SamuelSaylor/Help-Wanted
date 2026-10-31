@@ -31,14 +31,14 @@ Results are saved to `.help-wanted/<github-username>/` as validated JSON (`profi
 
 ## Run it
 
-You need Python 3.13 or newer, [Ollama](https://ollama.com/download) (installed and running), and a GitHub account. Install with [pipx](https://pipx.pypa.io/) or [uv](https://docs.astral.sh/uv/getting-started/installation/), then run it:
+You need Python 3.13 or newer, [Ollama](https://ollama.com/download) (installed and running), and a GitHub account. Install with [pip](https://pip.pypa.io/), [pipx](https://pipx.pypa.io/) or [uv](https://docs.astral.sh/uv/getting-started/installation/), then run it:
 
 ```bash
-pipx install help-wanted
+pip install help-wanted
 help-wanted
 ```
 
-With uv, use `uv tool install help-wanted` instead. To run from source, clone the repo and use `uv run help-wanted` inside it.
+pipx and uv keep the tool in its own environment and put the `help-wanted` command on your PATH. Use `pipx install help-wanted` or `uv tool install help-wanted` instead of pip if you have either. With plain pip, a virtual environment avoids clashes with your other packages. If the command isn't found after installing, open a new terminal. To run from source, clone the repo and use `uv run help-wanted` inside it.
 
 There are no subcommands. The setup guide downloads the model with a progress bar and walks you through GitHub sign-in. It does not install Ollama for you, but it tells you where to get it.
 
