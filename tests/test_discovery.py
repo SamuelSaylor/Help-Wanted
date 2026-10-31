@@ -86,6 +86,7 @@ def test_discovery_waits_and_retries_rate_limit_envelopes(tmp_path, monkeypatch)
     ])
     search = Tool("search_repositories", lambda _: next(responses))
     discover(tmp_path, Model([], queries=["Python"]), [search],
+             profile=ContributorProfile(beginner_friendly_only=False),
              skills=SkillAssessment(username="octocat", experience_level="beginner", summary="New"))
     assert waits == [120]
     assert search.calls[0] == search.calls[1]
@@ -227,6 +228,17 @@ def test_new_to_github_searches_favour_many_beginner_issues(tmp_path):
         Tool("get_file_contents", {"content": "Beginner guide"}),
     ])
     assert output["projects"][0]["full_name"] == "music/project-1"
+
+
+def test_beginner_only_profile_targets_beginner_projects_even_with_github_history(tmp_path):
+    search = Tool("search_repositories", {"items": [repository(1)]})
+    discover(tmp_path, Model(ranked(1)), [search],
+             profile=ContributorProfile(beginner_friendly_only=True),
+             skills=SkillAssessment(username="octocat", experience_level="experienced", summary="Active on GitHub"))
+    assert search.calls
+    for call in search.calls:
+        assert "good-first-issues:>0" in call["query"] or "help-wanted-issues:>0" in call["query"]
+        assert call["sort"] == "help-wanted-issues"
 
 
 @pytest.mark.parametrize("requested,expected", [(1, 2), (2, 4), (3, 6), (99, 6)])

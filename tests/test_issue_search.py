@@ -96,6 +96,72 @@ def test_unsafe_issues_never_reach_model_or_saved_output(tmp_path):
     assert "search_type" not in tool.calls[0]
 
 
+def test_empty_topic_search_retries_without_topic_but_keeps_safety_rules(tmp_path):
+    # Captured cloud query: "good first issue TypeScript JavaScript" returned
+    # zero hits. Those are free-text requirements, not a beginner-label filter.
+    model = Model(query="good first issue TypeScript JavaScript")
+    tool = Search([payload(), payload(issue(1))])
+    result = run_search(tmp_path, model, tool,
+                        profile=ContributorProfile(recommendation_count=1))
+    assert [item["number"] for item in result["issues"]] == [1]
+    assert len(tool.calls) == 2
+    fallback = tool.calls[1]["query"]
+    assert "TypeScript" not in fallback and "JavaScript" not in fallback
+    for constraint in ("repo:example/project", "is:issue", "is:open", "no:assignee", "-linked:pr", "updated:>="):
+        assert constraint in fallback
+    assert 'label:"good first issue"' in fallback
+    assert 'label:"help wanted"' not in fallback  # Either label, not both.
+
+
+def test_fallback_tries_help_wanted_separately_and_still_rejects_unsafe_hits(tmp_path):
+    model = Model()
+    tool = Search([
+        payload(issue(2, labels=[])),
+        payload(issue(3, assignees=[{"login": "taken"}]), issue(4, linked_prs=[42])),
+        payload(issue(1, labels=["help wanted"]), issue(5, updated_at="2020-01-01T00:00:00Z")),
+    ])
+    result = run_search(tmp_path, model, tool, profile=ContributorProfile(recommendation_count=1))
+    assert [item["number"] for item in result["issues"]] == [1]
+    assert [item["number"] for item in model.seen] == [1]
+    assert len(tool.calls) == 3
+    assert tool.calls[1]["query"].endswith('label:"good first issue"')
+    assert tool.calls[2]["query"].endswith('label:"help wanted"')
+
+
+def test_non_beginner_fallback_removes_topic_without_requiring_labels(tmp_path):
+    tool = Search([payload(), payload(issue(1, labels=[]))])
+    result = run_search(tmp_path, Model(), tool,
+                        profile=ContributorProfile(beginner_friendly_only=False, recommendation_count=1))
+    assert [item["number"] for item in result["issues"]] == [1]
+    assert len(tool.calls) == 2
+    assert "label:" not in tool.calls[-1]["query"]
+    assert "documentation" not in tool.calls[-1]["query"]
+
+
+def test_empty_topic_starts_with_label_search_and_does_not_repeat_it(tmp_path):
+    tool = Search([payload(), payload()])
+    result = run_search(tmp_path, Model(query=""), tool)
+    assert len(tool.calls) == 2
+    assert tool.calls[0]["query"].endswith('label:"good first issue"')
+    assert tool.calls[1]["query"].endswith('label:"help wanted"')
+    assert "GitHub returned no search hits" in result["reason"]
+    assert "safety and beginner-label checks" not in result["reason"]
+
+
+def test_rejected_search_hits_are_distinguished_from_empty_searches(tmp_path):
+    tool = Search([payload(issue(1, assignees=["taken"])), payload(), payload()])
+    result = run_search(tmp_path, Model(), tool)
+    assert "none of the 1 search hits passed" in result["reason"]
+    assert "GitHub returned no search hits" not in result["reason"]
+
+
+def test_empty_model_selection_reports_eligible_issues_not_a_safety_failure(tmp_path):
+    tool = Search([payload(issue(1))])
+    result = run_search(tmp_path, Model(indices=[]), tool)
+    assert result["issues"] == []
+    assert "1 eligible issues were found, but Gemma selected none" in result["reason"]
+
+
 @pytest.mark.parametrize("beginner_only, expected", [(True, [3, 1]), (False, [3, 1, 4])])
 def test_beginner_labels_are_required_or_ranked_first_and_selection_is_bounded(tmp_path, beginner_only, expected):
     model = Model(indices=[3, 2, 1, 0, 999, -1, 2])
@@ -151,7 +217,8 @@ def test_search_waits_for_local_and_github_rate_limits_without_changing_query(tm
     tool = Search(responses)
     # Failed requests count against the same rolling window as successful ones.
     candidates = CandidateProjects(projects=[project(f"example/project{i}") for i in range(10)])
-    result = run_search(tmp_path, Model(), tool, projects=candidates)
+    result = run_search(tmp_path, Model(query=""), tool, projects=candidates,
+                        profile=ContributorProfile(beginner_friendly_only=False))
     assert len(tool.calls) == 13
     assert clock[0] >= 240
     assert len(waits) >= 3
@@ -280,7 +347,8 @@ def test_local_search_limit_waits_and_progress_names_each_candidate_project(tmp_
     monkeypatch.setattr(issue_search, "sleep", sleep)
     tool = Search([payload()] * 11)
     candidates = CandidateProjects(projects=[project(f"example/project{i}") for i in range(11)])
-    run_search(tmp_path, Model(), tool, projects=candidates)
+    run_search(tmp_path, Model(query=""), tool, projects=candidates,
+               profile=ContributorProfile(beginner_friendly_only=False))
     assert len(tool.calls) == 11
     assert clock[0] >= 60
     progress = capsys.readouterr().out
@@ -296,7 +364,7 @@ def test_incomplete_search_is_not_presented_as_exhaustive(tmp_path):
 
 
 @pytest.mark.parametrize("available, expected_calls, expected_issues", [
-    (False, 3, []), (True, 2, [1]),
+    (False, 9, []), (True, 4, [1]),
 ])
 def test_shortfall_searches_at_most_two_spares_and_stops_when_filled(tmp_path, available, expected_calls, expected_issues):
     candidates = CandidateProjects(
@@ -304,9 +372,10 @@ def test_shortfall_searches_at_most_two_spares_and_stops_when_filled(tmp_path, a
         spares=[project("example/spare1"), project("example/spare2"), project("example/spare3")],
     )
     spare_issue = issue(1, html_url="https://github.com/example/spare1/issues/1")
-    tool = Search([payload(), payload(spare_issue) if available else payload(), payload()])
+    tool = Search([payload()] * 3 + [payload(spare_issue) if available else payload()] + [payload()] * 5)
     result = run_search(tmp_path, Model(), tool, profile=ContributorProfile(recommendation_count=1), projects=candidates)
     assert len(tool.calls) == expected_calls
+    assert len({call["query"].split()[0] for call in tool.calls}) == (2 if available else 3)
     assert [i["number"] for i in result["issues"]] == expected_issues
     if not available:
         assert "Found 0 of 1" in result["reason"]
@@ -315,9 +384,9 @@ def test_shortfall_searches_at_most_two_spares_and_stops_when_filled(tmp_path, a
 
 def test_initial_candidate_projects_are_all_searched_and_spares_are_not_used_if_enough(tmp_path):
     candidates = CandidateProjects(projects=[project(), project("example/second")], spares=[project("example/spare")])
-    tool = Search([payload(issue(1)), payload()])
+    tool = Search([payload(issue(1)), payload(), payload(), payload()])
     result = run_search(tmp_path, Model(), tool, profile=ContributorProfile(recommendation_count=1), projects=candidates)
-    assert len(tool.calls) == 2
+    assert len(tool.calls) == 4
     assert [i["number"] for i in result["issues"]] == [1]
 
 
