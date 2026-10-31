@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Per-contributor output (profiles, assessments, recommendations)
+.help-wanted/

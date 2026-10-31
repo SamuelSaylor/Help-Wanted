@@ -1,0 +1,29 @@
+[project]
+name = "help-wanted"
+version = "0.1.0"
+description = "Find open-source projects and issues to contribute to, matched to you by Gemma 4"
+readme = "README.md"
+authors = [
+    { name = "simonteague6", email = "93562089+simonteague6@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "langchain-mcp-adapters>=0.3.2",
+    "langchain-ollama>=1.1.0",
+    "langgraph>=1.2.19",
+    "pydantic>=2.14.2",
+    "questionary>=2.1.1",
+    "rich>=15.0.0",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+help-wanted = "help_wanted:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
