@@ -61,6 +61,20 @@ Gemma must be central to the work (judged on this), not a chat wrapper.
 - Use `with_structured_output` (json_schema) for nodes that only need structured output, and keep tool calling for the nodes that search.
 - Ollama's default context window is far smaller than Gemma 4's 128K/256K and truncates silently. Set `num_ctx` on `ChatOllama` explicitly (about 8K on 8 GB machines, 16–32K on bigger ones). Keep each stage a fresh conversation that receives only the previous stage's JSON, cut READMEs to their first few thousand characters, and strip MCP results down to the fields Gemma needs.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `SamuelSaylor/Hack-Day-2026`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Hackathon constraints
 
 - Submissions close 4:00 PM on the day; live demo follows. Teams of up to 4.
