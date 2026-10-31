@@ -7,7 +7,7 @@ Find a first open-source issue that fits what you know, what you care about, and
 Built for Hacktoberfest Hack Day San Antonio, October 31, 2026: MLH Best Open-Source AI Project (Gemma 4) and OSPO Open Source Education.
 
 > [!WARNING]
-> **Work in progress, not a verified end-to-end demo.** The questionnaire is teammate-owned work in [#6](https://github.com/SamuelSaylor/Hack-Day-2026/issues/6); its current placeholder supplies a default Contributor Profile rather than asking questions. CLI setup integration and issue search are also being integrated. The full live Gemma run has **not been verified because Ollama is absent from the preparation environment**. [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9) remains blocked; this guide does not establish fresh-clone, demo, or production readiness.
+> **Work in progress, not a verified end-to-end demo.** The questionnaire is teammate-owned work in [#6](https://github.com/SamuelSaylor/Hack-Day-2026/issues/6); its current placeholder supplies a default Contributor Profile rather than asking questions. Issue search is also being integrated. The full live Gemma run has **not been verified because Ollama is absent from the preparation environment**. [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9) remains blocked; this guide does not establish fresh-clone, demo, or production readiness.
 
 ## Get ready
 
@@ -21,7 +21,7 @@ You need a terminal, an internet connection, a GitHub account, and:
 
 ## Clone and run
 
-These are the intended steps for the integrated CLI. Until the work listed above is merged, a run may stop at an incomplete stage; it should not be treated as a completed Recommendation demo.
+These steps start the CLI, including Ollama setup and GitHub sign-in. Until the work listed above is merged, a run uses default answers and incomplete stages; it should not be treated as a completed Recommendation demo.
 
 ```bash
 git clone https://github.com/SamuelSaylor/Hack-Day-2026.git
@@ -36,7 +36,7 @@ Later, from the same folder:
 uv run help-wanted
 ```
 
-uv creates the Python environment and installs dependencies for you. There are **no subcommands** to learn. The integrated setup guide checks Ollama, asks before starting a stopped local server, downloads the selected model with progress, and walks you through GitHub sign-in. It explains how to install Ollama if it is missing; it does not install Ollama itself.
+uv creates the Python environment and installs dependencies for you. There are **no subcommands** to learn. The setup guide checks Ollama, asks before starting a stopped local server, downloads the selected model with progress, and walks you through GitHub sign-in. It explains how to install Ollama if it is missing; it does not install Ollama itself.
 
 ### Choose a Gemma model
 
@@ -107,7 +107,7 @@ The pipeline saves work in `.help-wanted/<github-username>/` inside the folder w
 | `issues.json` | Selected issues and any shortfall reason |
 | `recommendations.md` | Readable Recommendations, also shown in the terminal |
 
-The JSON files are Pydantic-validated and are the source of truth. A rerun reuses existing stage outputs, including saved Markdown, so completed work survives a later failure. Setup still runs. Until authenticated CLI integration is present, the skeleton uses `sample-contributor` as its folder name.
+The JSON files are Pydantic-validated and are the source of truth. A rerun reuses existing stage outputs, including saved Markdown, so completed work survives a later failure. Setup and the GitHub identity check still run, so Ollama and GitHub access are needed even when outputs are cached. The CLI uses the signed-in GitHub username for the output folder.
 
 To replace saved outputs and run every stage again:
 
@@ -121,7 +121,7 @@ Use `--fresh` after changing model settings if you want newly generated results.
 
 Repository history credits **Simon ([@simonteague6](https://github.com/simonteague6))** and **Samuel ([@SamuelSaylor](https://github.com/SamuelSaylor))**. Samuel supplied the hand-drawn logo. The project is shared under the [MIT license](LICENSE).
 
-**Built on October 31, 2026:** the Help Wanted Python package and CLI, validated stage contracts and saved-output pipeline, GitHub sign-in helper, Ollama setup helper, public-history Skill Assessment, Gemma-driven discovery, Recommendation writing, and offline tests. The questionnaire, issue search, and final CLI wiring are integration work in progress; this README is documentation preparation, not a claim that those blockers or the live demo are complete.
+**Built on October 31, 2026:** the Help Wanted Python package and CLI with Ollama/GitHub setup wiring, validated stage contracts and saved-output pipeline, GitHub sign-in helper, Ollama setup helper, public-history Skill Assessment, Gemma-driven discovery, Recommendation writing, and offline tests. The questionnaire and issue search are integration work in progress; this README is documentation preparation, not a claim that those blockers or the live demo are complete.
 
 **Reused, not trained or built by this team:**
 
