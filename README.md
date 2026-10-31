@@ -8,9 +8,6 @@ Help Wanted finds a first open-source issue that fits what you know, what you ca
 
 Gemma 4 runs locally through Ollama and makes the decisions at every stage: it turns your answers into searches, judges your experience, ranks projects and issues, and writes the guides. Built for Hacktoberfest Hack Day San Antonio 2026, for the MLH Best Open-Source AI Project (Gemma 4) and OSPO Open Source Education tracks.
 
-> [!WARNING]
-> This is a work in progress. The automated tests use scripted Ollama and GitHub responses, and a full live run with real Gemma and GitHub is not verified yet. Progress is tracked in [#9](https://github.com/SamuelSaylor/Hack-Day-2026/issues/9).
-
 ## Why it exists
 
 Most people who have never contributed to open source can't tell which projects are friendly, which issues are still free, or which ones match their skills. A "good first issue" search gives them links but no reason to pick one and no idea what to do next. This is aimed at beginners: high schoolers, non-CS majors, first-generation students, and people whose first language isn't English.
