@@ -322,7 +322,8 @@ def test_cloud_skill_scan_fits_normal_public_history(external_services, monkeypa
     assert (folder / "skills.json").exists()
 
 
-def test_cli_asks_questionnaire_resumes_answers_and_fresh_asks_again(external_services, monkeypatch, tmp_path):
+@pytest.mark.parametrize("interest", ["music", "music " * 2000])
+def test_cli_asks_questionnaire_resumes_answers_and_fresh_asks_again(external_services, monkeypatch, tmp_path, interest):
     from types import SimpleNamespace
     from help_wanted.stages import questionnaire
 
@@ -339,7 +340,7 @@ def test_cli_asks_questionnaire_resumes_answers_and_fresh_asks_again(external_se
 
         async def text(self, message):
             prompts.append(message)
-            return "music" if message.startswith("What topics or hobbies") else ""
+            return interest if message.startswith("What topics or hobbies") else ""
 
     monkeypatch.setattr(questionnaire, "sys", SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: True)))
     monkeypatch.setattr(questionnaire, "QuestionaryPrompter", Prompter)
@@ -351,7 +352,7 @@ def test_cli_asks_questionnaire_resumes_answers_and_fresh_asks_again(external_se
     profile = json.loads(profile_path.read_text())
     assert profile["spoken_languages"] == ["Spanish"]
     assert profile["search_keywords"] == ["audio"]
-    assert profile["interests"] == ["music"]
+    assert profile["interests"] == [interest.strip()]
     prompt_count = len(prompts)
     assert prompt_count > 0
 
