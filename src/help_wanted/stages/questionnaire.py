@@ -6,9 +6,9 @@ import sys
 
 import questionary
 from pydantic import BaseModel, Field
-from rich.console import Console
 
 from help_wanted.contracts import ContributorProfile
+from help_wanted.theme import PROMPT_STYLE, boxed_question, themed_console
 
 SKIP = "Skip"
 OTHER = "Other"
@@ -32,16 +32,21 @@ class QuestionaryPrompter:
     """Async prompts: questionary's sync ask() cannot run inside the pipeline's event loop."""
 
     async def select(self, message, choices):
-        answer = await questionary.select(message, choices=[*choices, SKIP]).unsafe_ask_async()
+        question = questionary.select(
+            "", choices=[*choices, SKIP], qmark="", instruction=" ", style=PROMPT_STYLE,
+        )
+        answer = await boxed_question(question, message).unsafe_ask_async()
         return None if answer == SKIP else answer
 
     async def checkbox(self, message, choices):
-        return await questionary.checkbox(
-            message + " (space to select, enter to continue; none = skip)", choices=choices,
-        ).unsafe_ask_async()
+        question = questionary.checkbox(
+            "", choices=choices, qmark="", instruction=" ", style=PROMPT_STYLE,
+        )
+        return await boxed_question(question, message).unsafe_ask_async()
 
     async def text(self, message):
-        return (await questionary.text(message + " (enter to skip)").unsafe_ask_async()).strip()
+        question = questionary.text("", qmark="", style=PROMPT_STYLE)
+        return (await boxed_question(question, message).unsafe_ask_async()).strip()
 
 
 def _split(text):
@@ -71,13 +76,13 @@ async def ask_profile(prompter) -> dict:
 
     await pick("years_programming", "How long have you been programming?", YEARS)
     await pick("git_experience", "How comfortable are you with Git?", GIT)
-    past = await prompter.text("Any past contributions to open source or team projects?")
+    past = await prompter.text("Have you helped with open source or team projects before?")
     if past:
         answers["past_contributions"] = past
     coding = await _with_other(prompter, "Which programming languages do you use?", CODING)
     if coding:
         answers["coding_languages"] = coding
-    native = await prompter.select("What is your native language? (Recommendations use it)", [*SPOKEN, OTHER])
+    native = await prompter.select("What is your native language?", [*SPOKEN, OTHER])
     if native == OTHER:
         native = (_split(await prompter.text("Which language?")) or [None])[0]
     if native:
@@ -87,15 +92,15 @@ async def ask_profile(prompter) -> dict:
     await pick("contribution_goal", "What is your main goal?", GOALS)
     await pick("time_available", "How much time do you have?", TIME)
     await pick("project_popularity", "What size of project do you want?", POPULARITY)
-    await pick("recent_activity", "How recently should the project have been active?", RECENT)
+    await pick("recent_activity", "How recently should the project be active?", RECENT)
     beginner = await prompter.select("Only show issues labelled for beginners?", ["Yes", "No"])
     if beginner is not None:
         answers["beginner_friendly_only"] = beginner == "Yes"
     await pick("recommendation_count", "How many recommendations do you want?", COUNTS)
     for field, message in (
-        ("interests", "What topics or hobbies excite you? (comma-separated)"),
-        ("industries", "What industry or field are you in, or want to work in?"),
-        ("project_types", "What kind of project would you like to help build? (e.g. web app, CLI tool)"),
+        ("interests", "What topics or hobbies interest you?"),
+        ("industries", "Which fields interest you?"),
+        ("project_types", "What would you like to build: apps, CLI tools, libraries, or something else?"),
     ):
         items = _split(await prompter.text(message))
         if items:
@@ -134,7 +139,14 @@ async def run(context, *, setup, prompter=None):
         if not sys.stdin.isatty():
             return context.profile
         prompter = QuestionaryPrompter()
-        Console().print("Every question is optional: choose Skip or press enter to use defaults.")
+        console = themed_console()
+        console.print()
+        console.print("[bold]Your Contributor Profile[/bold]", style="accent")
+        console.print("[accent]•[/accent] Use arrow keys to move. Press Enter to continue.")
+        console.print("[accent]•[/accent] Press Space to select items in a list.")
+        console.print("[accent]•[/accent] Every question is optional. Choose Skip or leave it blank.")
+        console.print("[accent]•[/accent] When typing a list, put commas between items.")
+        console.print()
     answers = await ask_profile(prompter)
     answers["search_keywords"] = await extract_keywords(context, answers)
     return ContributorProfile(**answers)

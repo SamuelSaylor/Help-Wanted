@@ -13,6 +13,7 @@ from help_wanted.clients import GitHubClientError, build_model, get_github_usern
 from help_wanted.ollama_setup import SetupError, prepare_ollama
 from help_wanted.pipeline import ModelInvocationError, run_pipeline
 from help_wanted.model_context import ModelContextError
+from help_wanted.theme import print_title, terminal_background, themed_console
 
 
 app = typer.Typer(add_completion=False)
@@ -31,8 +32,15 @@ async def _run(console: Console, *, fresh: bool):
 
 @app.command()
 def main(fresh: bool = typer.Option(False, "--fresh", help="Run every stage again.")) -> None:
-    console = Console()
-    console.print("Help Wanted — find an open-source contribution.")
+    with terminal_background():
+        _main(fresh=fresh)
+
+
+def _main(*, fresh: bool) -> None:
+    console = themed_console()
+    if console.is_terminal:
+        console.clear()
+    print_title(console)
     try:
         result = asyncio.run(_run(console, fresh=fresh))
     except (SetupError, AuthError, GitHubClientError, ModelContextError, ModelInvocationError) as error:

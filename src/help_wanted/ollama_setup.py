@@ -11,7 +11,9 @@ from typing import Never
 from urllib.parse import urlsplit
 
 import httpx
+import questionary
 from rich.console import Console
+from help_wanted.theme import ORANGE, PROMPT_STYLE, boxed_question, themed_console
 from rich.prompt import Confirm
 from rich.progress import BarColumn, DownloadColumn, Progress, SpinnerColumn, TextColumn
 
@@ -32,7 +34,7 @@ async def prepare_ollama(*, console: Console | None = None) -> str:
 
 
 def _prepare_ollama(console: Console | None) -> str:
-    console = console or Console()
+    console = console or themed_console()
     binary = shutil.which("ollama")
     if not binary:
         message = "Please install Ollama from https://ollama.com/download, then run Help Wanted again."
@@ -55,14 +57,14 @@ def _prepare_ollama(console: Console | None) -> str:
             _stop(console, "Ollama could not list its models. Open or update Ollama, check OLLAMA_HOST, then try again.")
         model = os.getenv("HELP_WANTED_MODEL", "").strip()
         if not model:
-            console.print(
-                "You can run Gemma locally on this machine or use Ollama cloud. "
-                "Cloud sends model inputs to Ollama's service and requires "
-                "internet access and an Ollama account."
-            )
+            console.print("[bold]Choose how to run Gemma[/bold]", style=ORANGE)
+            console.print(f"[{ORANGE}]•[/] On this computer: run Gemma locally.")
+            console.print(f"[{ORANGE}]•[/] Ollama cloud: send your answers to Ollama's service.")
+            console.print(f"[{ORANGE}]•[/] Cloud needs internet access and an Ollama account.")
+            console.print()
             model = (
                 "gemma4:cloud"
-                if Confirm.ask("Would you like to use Ollama cloud?", default=False, console=console)
+                if _choose_cloud(console)
                 else _local_model(console)
             )
         if "cloud" in model:
@@ -83,6 +85,17 @@ def _prepare_ollama(console: Console | None) -> str:
                     "For cloud models, run `ollama signin` first.",
                 )
     return model
+
+
+def _choose_cloud(console: Console) -> bool:
+    if not console.is_terminal:
+        return Confirm.ask("Would you like to use Ollama cloud?", default=False, console=console)
+    question = questionary.select(
+        "", choices=["On this computer", "Ollama cloud"],
+        qmark="", instruction=" ", style=PROMPT_STYLE,
+    )
+    answer = boxed_question(question, "Where should Gemma run?").unsafe_ask()
+    return answer == "Ollama cloud"
 
 
 def _stop(console: Console, message: str) -> Never:

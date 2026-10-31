@@ -6,6 +6,20 @@ from typer.testing import CliRunner
 from help_wanted import cli
 
 
+@pytest.mark.parametrize("is_terminal", [True, False])
+def test_startup_clears_only_interactive_terminals(external_services, monkeypatch, is_terminal):
+    console = cli.themed_console()
+    monkeypatch.setattr(type(console), "is_terminal", property(lambda self: is_terminal))
+    monkeypatch.setattr(cli, "themed_console", lambda: console)
+    cleared = []
+    monkeypatch.setattr(console, "clear", lambda: cleared.append(list(external_services)))
+
+    result = CliRunner().invoke(cli.app, [])
+
+    assert result.exit_code == 0
+    assert cleared == ([[]] if is_terminal else [])
+
+
 class Model:
     def with_structured_output(self, schema, *, method):
         assert method == "json_schema"

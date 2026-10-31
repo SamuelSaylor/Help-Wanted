@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 import httpx
 from rich.console import Console
+from help_wanted.theme import themed_console
 
 GITHUB_CLIENT_ID = "Ov23limUFG1pepZFGN7q"
 DEVICE_URL = "https://github.com/login/device"
@@ -146,7 +147,7 @@ def _saved_token() -> str:
 
 def _get_github_token(console: Console | None = None) -> str:
     """Resolve sign-in in a worker so polling does not block the event loop."""
-    console = console if console is not None else Console()
+    console = console if console is not None else themed_console()
     if token := os.environ.get("GITHUB_TOKEN", "").strip():
         return token
     try:

@@ -10,6 +10,7 @@ import json
 import re
 
 from rich.console import Console
+from help_wanted.theme import themed_console
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,7 @@ def normalize(value, *, structured=False):
 async def search(context, name, arguments, *, before=None, pause=None, console=None):
     """Retry the identical read-only search, at most four attempts."""
     pause = pause or asyncio.sleep
-    console = console or Console()
+    console = console or themed_console()
     for attempt in range(4):
         if before:
             await before()
