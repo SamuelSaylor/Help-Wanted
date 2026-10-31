@@ -43,7 +43,10 @@ def main(fresh: bool = typer.Option(False, "--fresh", help="Run every stage agai
         console.print(str(error), markup=False)
         raise typer.Exit(1) from None
     except ValidationError:
-        console.print("Saved answers could not be read. Run `help-wanted --fresh` to start over.")
+        console.print(
+            "Saved answers or Gemma's reply could not be read. Try again; "
+            "if saved answers are invalid, run `help-wanted --fresh` to start over."
+        )
         raise typer.Exit(1) from None
     except Exception:
         console.print(

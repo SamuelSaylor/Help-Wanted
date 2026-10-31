@@ -12,6 +12,8 @@ class Model:
 
         class Reply:
             async def ainvoke(self, messages):
+                if schema.__name__ == "SearchPlan":
+                    return schema.model_validate({"queries": ["topic:education"]})
                 return schema.model_validate({
                     "heading": "Recommendations", "why_heading": "Why it fits",
                     "learn_heading": "What you will learn", "steps_heading": "First steps",
