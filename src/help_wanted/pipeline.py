@@ -79,6 +79,14 @@ class StageContext:
                     "Cloud requires internet access and an Ollama account. "
                     "Increasing HELP_WANTED_NUM_CTX will not fix this memory error."
                 ) from None
+            if "process has terminated" in error.error or "CUDA error" in error.error:
+                raise ModelInvocationError(
+                    "Ollama's model process crashed, usually because of the graphics card or its driver. "
+                    "Update your graphics driver and Ollama, or run on the processor only with "
+                    "`CUDA_VISIBLE_DEVICES=-1` (PowerShell: `$env:CUDA_VISIBLE_DEVICES='-1'`) "
+                    "and restart Ollama. You can also use Ollama cloud with "
+                    "`HELP_WANTED_MODEL=gemma4:cloud`."
+                ) from None
             raise
         return schema.model_validate(value)
 

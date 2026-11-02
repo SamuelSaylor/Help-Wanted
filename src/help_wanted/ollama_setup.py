@@ -237,8 +237,29 @@ def _local_model(console: Console) -> str:
     _stop(console, "Use a machine with at least 8 GB of memory, or try again and choose Ollama cloud.")
 
 
+def _windows_memory_bytes() -> int:
+    import ctypes
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [
+            ("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
+            ("total_physical", ctypes.c_ulonglong), ("avail_physical", ctypes.c_ulonglong),
+            ("total_page_file", ctypes.c_ulonglong), ("avail_page_file", ctypes.c_ulonglong),
+            ("total_virtual", ctypes.c_ulonglong), ("avail_virtual", ctypes.c_ulonglong),
+            ("avail_extended_virtual", ctypes.c_ulonglong),
+        ]
+
+    status = MemoryStatus()
+    status.length = ctypes.sizeof(MemoryStatus)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        raise OSError("Could not read memory size")
+    return status.total_physical
+
+
 def _memory_gb() -> float | None:
     try:
+        if platform.system() == "Windows":
+            return _windows_memory_bytes() / 1024**3
         if platform.system() == "Darwin":
             result = subprocess.run(
                 ["sysctl", "-n", "hw.memsize"], capture_output=True,
